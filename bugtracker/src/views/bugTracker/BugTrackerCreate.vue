@@ -237,43 +237,45 @@
                                 配置汇总
                             </div>
                             <table class="summary-table">
-                                <tr>
-                                    <th>仓库</th>
-                                    <td>{{ form.repo || '-' }}</td>
-                                </tr>
-                                <tr>
-                                    <th>分支</th>
-                                    <td>{{ form.branch || '-' }}</td>
-                                </tr>
-                                <tr>
-                                    <th>验证模式</th>
-                                    <td>{{ form.mode === 'single' ? '单节点验证' : '多节点验证' }}</td>
-                                </tr>
-                                <tr>
-                                    <th>commit 节点</th>
-                                    <td>
-                                        <template v-if="form.mode === 'single'">
-                                            {{ form.commitId || '（使用最新 commit）' }}
-                                        </template>
-                                        <template v-else>
-                                            {{ form.startCommitId }} ~ {{ form.endCommitId }}
-                                        </template>
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <th>已勾选用例</th>
-                                    <td>
-                                        <ul v-if="form.selectedCases.length" class="summary-cases">
-                                            <li v-for="c in form.selectedCases" :key="c.id">
-                                                {{ c.label }}
-                                                <span v-if="form.environments.length">
-                                                    （环境: {{ form.environments[0]?.name }} {{ form.environments[0]?.envIndex }}）
-                                                </span>
-                                            </li>
-                                        </ul>
-                                        <span v-else class="no-cases">未选择用例</span>
-                                    </td>
-                                </tr>
+                                <tbody>
+                                    <tr>
+                                        <th>仓库</th>
+                                        <td>{{ form.repo || '-' }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>分支</th>
+                                        <td>{{ form.branch || '-' }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>验证模式</th>
+                                        <td>{{ form.mode === 'single' ? '单节点验证' : '多节点验证' }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>commit 节点</th>
+                                        <td>
+                                            <template v-if="form.mode === 'single'">
+                                                {{ form.commitId || '（使用最新 commit）' }}
+                                            </template>
+                                            <template v-else>
+                                                {{ form.startCommitId }} ~ {{ form.endCommitId }}
+                                            </template>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <th>已勾选用例</th>
+                                        <td>
+                                            <ul v-if="form.selectedCases.length" class="summary-cases">
+                                                <li v-for="c in form.selectedCases" :key="c.id">
+                                                    {{ c.label }}
+                                                    <span v-if="form.environments.length">
+                                                        （环境: {{ form.environments[0]?.name }} {{ form.environments[0]?.envIndex }}）
+                                                    </span>
+                                                </li>
+                                            </ul>
+                                            <span v-else class="no-cases">未选择用例</span>
+                                        </td>
+                                    </tr>
+                                </tbody>
                             </table>
                         </div>
 
@@ -365,7 +367,7 @@ import {
     InfoFilled, Cpu, VideoPlay, Tickets, DataLine, PieChart,
     CircleClose, Aim, Loading,
 } from '@element-plus/icons-vue'
-import { getCaseTree, getMatchedEnvironments, createAnalysisTask, getTaskLogs, getTaskResult } from '@/api/bugTracker/index'
+import { getCaseTreeObj, getMatchedEnvironmentsObj, createAnalysisTaskObj, getTaskLogsObj, getTaskResultObj } from '@/api/bugTracker/business'
 
 const router = useRouter()
 

@@ -19,6 +19,13 @@ const bugTrackerRoutes = [
         component: () => import('@/views/bugTracker/BugTrackerCreate.vue'),
         meta: { title: '新增分析' },
     },
+    {
+        // URL 格式：/bugtracker/detail?taskId=xxx
+        path: '/bugtracker/detail',
+        name: 'BugTrackerDetail',
+        component: () => import('@/views/bugTracker/BugTrackerDetail.vue'),
+        meta: { title: '任务详情' },
+    },
 ]
 
 export default bugTrackerRoutes
