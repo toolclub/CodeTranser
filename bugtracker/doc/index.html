@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BugTracker - 测试管理平台</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Microsoft YaHei', 'PingFang SC', 'Helvetica Neue', sans-serif;
+            background-color: #f5f7fa;
+            color: #333;
+            min-height: 100vh;
+        }
+
+        /* 左侧导航栏 */
+        .sidebar {
+            width: 240px;
+            background: linear-gradient(180deg, #1a237e 0%, #283593 100%);
+            position: fixed;
+            left: 0;
+            top: 0;
+            height: 100vh;
+            color: #fff;
+            overflow-y: auto;
+            z-index: 100;
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .sidebar-header h1 {
+            font-size: 20px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .sidebar-header h1 i {
+            color: #64b5f6;
+        }
+
+        .nav-section {
+            padding: 15px 0;
+        }
+
+        .nav-item {
+            padding: 12px 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 14px;
+            border-left: 3px solid transparent;
+        }
+
+        .nav-item:hover {
+            background: rgba(255,255,255,0.1);
+            border-left-color: #64b5f6;
+        }
+
+        .nav-item.active {
+            background: rgba(255,255,255,0.15);
+            border-left-color: #64b5f6;
+        }
+
+        .nav-item i {
+            width: 20px;
+            text-align: center;
+            color: #90caf9;
+        }
+
+        .nav-item.has-submenu::after {
+            content: '\f107';
+            font-family: 'Font Awesome 6 Free';
+            font-weight: 900;
+            margin-left: auto;
+            transition: transform 0.3s;
+        }
+
+        .nav-item.has-submenu.expanded::after {
+            transform: rotate(180deg);
+        }
+
+        .submenu {
+            display: none;
+            background: rgba(0,0,0,0.2);
+        }
+
+        .submenu.show {
+            display: block;
+        }
+
+        .submenu .nav-item {
+            padding-left: 50px;
+            font-size: 13px;
+        }
+
+        /* 主内容区域 */
+        .main-content {
+            margin-left: 240px;
+            min-height: 100vh;
+        }
+
+        /* 顶部搜索栏 */
+        .top-bar {
+            background: #fff;
+            padding: 16px 30px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            position: sticky;
+            top: 0;
+            z-index: 50;
+        }
+
+        .search-box {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex: 1;
+            max-width: 500px;
+        }
+
+        .search-box input {
+            flex: 1;
+            padding: 10px 15px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.3s, box-shadow 0.3s;
+        }
+
+        .search-box input:focus {
+            border-color: #1976d2;
+            box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.1);
+        }
+
+        .search-box button {
+            padding: 10px 20px;
+            background: #f5f5f5;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .search-box button:hover {
+            background: #eeeeee;
+        }
+
+        .btn-primary {
+            padding: 10px 24px;
+            background: linear-gradient(135deg, #1976d2 0%, #1565c0 100%);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary:hover {
+            background: linear-gradient(135deg, #1565c0 0%, #0d47a1 100%);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(25, 118, 210, 0.3);
+        }
+
+        /* 内容区域 */
+        .content-area {
+            padding: 25px 30px;
+        }
+
+        .page-title {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #1a237e;
+        }
+
+        /* 表格区域 */
+        .table-container {
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+            overflow: hidden;
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .data-table thead {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        }
+
+        .data-table th {
+            padding: 14px 16px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 13px;
+            color: #495057;
+            border-bottom: 2px solid #dee2e6;
+            white-space: nowrap;
+        }
+
+        .data-table td {
+            padding: 14px 16px;
+            font-size: 13px;
+            border-bottom: 1px solid #f0f0f0;
+            color: #555;
+        }
+
+        .data-table tbody tr {
+            transition: background-color 0.2s;
+        }
+
+        .data-table tbody tr:hover {
+            background-color: #f8f9ff;
+        }
+
+        .data-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        /* 状态标签 */
+        .status {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .status-success {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .status-running {
+            background: #e3f2fd;
+            color: #1565c0;
+        }
+
+        .status-running::before {
+            content: '';
+            width: 6px;
+            height: 6px;
+            background: #1565c0;
+            border-radius: 50%;
+            margin-right: 6px;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        .status-failed {
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        .status-pending {
+            background: #fff3e0;
+            color: #ef6c00;
+        }
+
+        /* 操作按钮 */
+        .action-btns {
+            display: flex;
+            gap: 8px;
+        }
+
+        .action-btn {
+            width: 32px;
+            height: 32px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s;
+        }
+
+        .action-btn.rerun {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .action-btn.rerun:hover:not(:disabled) {
+            background: #1976d2;
+            color: #fff;
+        }
+
+        .action-btn.rerun:disabled {
+            background: #f5f5f5;
+            color: #bdbdbd;
+            cursor: not-allowed;
+        }
+
+        .action-btn.delete {
+            background: #ffebee;
+            color: #e53935;
+        }
+
+        .action-btn.delete:hover {
+            background: #e53935;
+            color: #fff;
+        }
+
+        /* 分页 */
+        .pagination {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px;
+            background: #fafafa;
+            border-top: 1px solid #eee;
+        }
+
+        .pagination-info {
+            font-size: 13px;
+            color: #666;
+        }
+
+        .pagination-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .pagination-btn {
+            width: 34px;
+            height: 34px;
+            border: 1px solid #ddd;
+            background: #fff;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s;
+            color: #666;
+        }
+
+        .pagination-btn:hover:not(:disabled) {
+            border-color: #1976d2;
+            color: #1976d2;
+        }
+
+        .pagination-btn.active {
+            background: #1976d2;
+            border-color: #1976d2;
+            color: #fff;
+        }
+
+        .pagination-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .commit-id {
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 12px;
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: #666;
+        }
+
+        /* 响应式 */
+        @media (max-width: 1200px) {
+            .sidebar {
+                width: 200px;
+            }
+            .main-content {
+                margin-left: 200px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- 左侧导航栏 -->
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <h1><i class="fas fa-bug"></i> BugTracker</h1>
+        </div>
+        <nav class="nav-section">
+            <div class="nav-item has-submenu expanded" onclick="toggleSubmenu(this)">
+                <i class="fas fa-flask"></i>
+                <span>测试</span>
+            </div>
+            <div class="submenu show">
+                <div class="nav-item"><i class="fas fa-desktop"></i> 测试环境</div>
+                <div class="nav-item"><i class="fas fa-cogs"></i> 环境管理</div>
+                <div class="nav-item active"><i class="fas fa-tasks"></i> BugTracker</div>
+            </div>
+            <div class="nav-item">
+                <i class="fas fa-chart-bar"></i>
+                <span>数据分析</span>
+            </div>
+            <div class="nav-item">
+                <i class="fas fa-cog"></i>
+                <span>系统设置</span>
+            </div>
+        </nav>
+    </aside>
+
+    <!-- 主内容区域 -->
+    <main class="main-content">
+        <!-- 顶部搜索栏 -->
+        <div class="top-bar">
+            <div class="search-box">
+                <input type="text" placeholder="请输入搜索内容……">
+                <button><i class="fas fa-search"></i></button>
+            </div>
+            <button class="btn-primary" onclick="location.href='workflow1.html'">
+                <i class="fas fa-plus"></i>
+                新增分析
+            </button>
+        </div>
+
+        <!-- 内容区域 -->
+        <div class="content-area">
+            <h2 class="page-title">构建记录</h2>
+            
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>任务ID</th>
+                            <th>验证模式</th>
+                            <th>代码仓库名称</th>
+                            <th>构建分支</th>
+                            <th>commitID</th>
+                            <th>用例总数</th>
+                            <th>成功用例数</th>
+                            <th>失败用例数</th>
+                            <th>状态</th>
+                            <th>开始执行时间</th>
+                            <th>结束执行时间</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>TAS1567</td>
+                            <td>单节点验证</td>
+                            <td>GitHub仓库A</td>
+                            <td>dev-nginx</td>
+                            <td><span class="commit-id">commit_123456</span></td>
+                            <td>125</td>
+                            <td>120</td>
+                            <td>5</td>
+                            <td><span class="status status-success">成功</span></td>
+                            <td>2023-05-08 09:00:00</td>
+                            <td>2023-05-08 14:32:00</td>
+                            <td>
+                                <div class="action-btns">
+                                    <button class="action-btn rerun" title="重跑"><i class="fas fa-redo"></i></button>
+                                    <button class="action-btn delete" title="删除"><i class="fas fa-trash"></i></button>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>task5668</td>
+                            <td>多节点验证</td>
+                            <td>GitHub仓库B</td>
+                            <td>feature-new</td>
+                            <td><span class="commit-id">commit_664321~commit_987654</span></td>
+                            <td>123</td>
+                            <td>75</td>
+                            <td>3</td>
+                            <td><span class="status status-running">运行中</span></td>
+                            <td>2023-05-09 10:15:00</td>
+                            <td>-</td>
+                            <td>
+                                <div class="action-btns">
+                                    <button class="action-btn rerun" disabled title="重跑"><i class="fas fa-redo"></i></button>
+                                    <button class="action-btn delete" title="删除"><i class="fas fa-trash"></i></button>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>TAS1568</td>
+                            <td>单节点验证</td>
+                            <td>GitHub仓库C</td>
+                            <td>hotfix-bug</td>
+                            <td><span class="commit-id">commit_555666</span></td>
+                            <td>98</td>
+                            <td>98</td>
+                            <td>0</td>
+                            <td><span class="status status-success">成功</span></td>
+                            <td>2023-05-10 08:30:00</td>
+                            <td>2023-05-10 12:45:00</td>
+                            <td>
+                                <div class="action-btns">
+                                    <button class="action-btn rerun" title="重跑"><i class="fas fa-redo"></i></button>
+                                    <button class="action-btn delete" title="删除"><i class="fas fa-trash"></i></button>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>task5669</td>
+                            <td>多节点验证</td>
+                            <td>GitHub仓库A</td>
+                            <td>release-v2</td>
+                            <td><span class="commit-id">commit_111222~commit_333444</span></td>
+                            <td>156</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td><span class="status status-pending">待执行</span></td>
+                            <td>-</td>
+                            <td>-</td>
+                            <td>
+                                <div class="action-btns">
+                                    <button class="action-btn rerun" disabled title="重跑"><i class="fas fa-redo"></i></button>
+                                    <button class="action-btn delete" title="删除"><i class="fas fa-trash"></i></button>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>TAS1569</td>
+                            <td>单节点验证</td>
+                            <td>GitHub仓库D</td>
+                            <td>dev-api</td>
+                            <td><span class="commit-id">commit_789012</span></td>
+                            <td>87</td>
+                            <td>82</td>
+                            <td>5</td>
+                            <td><span class="status status-failed">失败</span></td>
+                            <td>2023-05-11 14:00:00</td>
+                            <td>2023-05-11 18:30:00</td>
+                            <td>
+                                <div class="action-btns">
+                                    <button class="action-btn rerun" title="重跑"><i class="fas fa-redo"></i></button>
+                                    <button class="action-btn delete" title="删除"><i class="fas fa-trash"></i></button>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>task5670</td>
+                            <td>单节点验证</td>
+                            <td>GitHub仓库B</td>
+                            <td>test-ci</td>
+                            <td><span class="commit-id">commit_345678</span></td>
+                            <td>110</td>
+                            <td>108</td>
+                            <td>2</td>
+                            <td><span class="status status-success">成功</span></td>
+                            <td>2023-05-12 09:30:00</td>
+                            <td>2023-05-12 15:00:00</td>
+                            <td>
+                                <div class="action-btns">
+                                    <button class="action-btn rerun" title="重跑"><i class="fas fa-redo"></i></button>
+                                    <button class="action-btn delete" title="删除"><i class="fas fa-trash"></i></button>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>TAS1570</td>
+                            <td>多节点验证</td>
+                            <td>GitHub仓库E</td>
+                            <td>feature-auth</td>
+                            <td><span class="commit-id">commit_456789~commit_567890</span></td>
+                            <td>145</td>
+                            <td>140</td>
+                            <td>5</td>
+                            <td><span class="status status-running">运行中</span></td>
+                            <td>2023-05-13 11:00:00</td>
+                            <td>-</td>
+                            <td>
+                                <div class="action-btns">
+                                    <button class="action-btn rerun" disabled title="重跑"><i class="fas fa-redo"></i></button>
+                                    <button class="action-btn delete" title="删除"><i class="fas fa-trash"></i></button>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>task5671</td>
+                            <td>单节点验证</td>
+                            <td>GitHub仓库A</td>
+                            <td>main</td>
+                            <td><span class="commit-id">commit_999888</span></td>
+                            <td>92</td>
+                            <td>90</td>
+                            <td>2</td>
+                            <td><span class="status status-success">成功</span></td>
+                            <td>2023-05-14 08:00:00</td>
+                            <td>2023-05-14 13:20:00</td>
+                            <td>
+                                <div class="action-btns">
+                                    <button class="action-btn rerun" title="重跑"><i class="fas fa-redo"></i></button>
+                                    <button class="action-btn delete" title="删除"><i class="fas fa-trash"></i></button>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+                
+                <!-- 分页 -->
+                <div class="pagination">
+                    <div class="pagination-info">总计：10</div>
+                    <div class="pagination-controls">
+                        <button class="pagination-btn" disabled><i class="fas fa-chevron-left"></i></button>
+                        <button class="pagination-btn active">1</button>
+                        <button class="pagination-btn">2</button>
+                        <button class="pagination-btn">3</button>
+                        <button class="pagination-btn"><i class="fas fa-chevron-right"></i></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        function toggleSubmenu(element) {
+            element.classList.toggle('expanded');
+            const submenu = element.nextElementSibling;
+            submenu.classList.toggle('show');
+        }
+    </script>
+</body>
+</html>

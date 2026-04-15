@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>新增分析 - 用例配置</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Microsoft YaHei', 'PingFang SC', 'Helvetica Neue', sans-serif;
+            background-color: #f0f2f5;
+            color: #333;
+            min-height: 100vh;
+        }
+
+        /* 顶部导航栏 */
+        .top-bar {
+            background: #fff;
+            padding: 16px 30px;
+            display: flex;
+            align-items: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .back-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: #f5f5f5;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            color: #666;
+            margin-right: 30px;
+        }
+
+        .back-btn:hover {
+            background: #eeeeee;
+            color: #333;
+        }
+
+        .page-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1a237e;
+        }
+
+        /* 步骤导航 */
+        .step-navigation {
+            background: linear-gradient(135deg, #1a237e 0%, #283593 100%);
+            padding: 40px 60px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .step-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .step-circle {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 600;
+            background: rgba(255,255,255,0.2);
+            color: rgba(255,255,255,0.6);
+            transition: all 0.3s;
+        }
+
+        .step-item.active .step-circle {
+            background: #64b5f6;
+            color: #fff;
+            box-shadow: 0 0 20px rgba(100, 181, 246, 0.5);
+        }
+
+        .step-item.completed .step-circle {
+            background: #81c784;
+            color: #fff;
+        }
+
+        .step-label {
+            font-size: 14px;
+            color: rgba(255,255,255,0.6);
+            transition: color 0.3s;
+        }
+
+        .step-item.active .step-label {
+            color: #fff;
+            font-weight: 500;
+        }
+
+        .step-item.completed .step-label {
+            color: #a5d6a7;
+        }
+
+        .step-connector {
+            width: 80px;
+            height: 2px;
+            background: rgba(255,255,255,0.2);
+            margin: 0 20px;
+        }
+
+        .step-connector.completed {
+            background: #81c784;
+        }
+
+        /* 主要内容区域 */
+        .main-content {
+            max-width: 900px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+
+        .section-card {
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            overflow: hidden;
+        }
+
+        .section-header {
+            padding: 20px 30px;
+            border-bottom: 1px solid #eee;
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1a237e;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .section-title i {
+            color: #1976d2;
+        }
+
+        .section-body {
+            padding: 30px;
+        }
+
+        /* 搜索和统计栏 */
+        .toolbar {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+        }
+
+        .search-box {
+            flex: 1;
+            min-width: 250px;
+            position: relative;
+        }
+
+        .search-box input {
+            width: 100%;
+            padding: 12px 16px 12px 40px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 14px;
+            outline: none;
+            transition: all 0.3s;
+        }
+
+        .search-box input:focus {
+            border-color: #1976d2;
+            box-shadow: 0 0 0 4px rgba(25, 118, 210, 0.1);
+        }
+
+        .search-box i {
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #aaa;
+        }
+
+        .btn-reset {
+            padding: 10px 20px;
+            background: #fff;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+            color: #666;
+            font-size: 14px;
+        }
+
+        .btn-reset:hover {
+            border-color: #1976d2;
+            color: #1976d2;
+        }
+
+        .case-count {
+            padding: 10px 20px;
+            background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+            border-radius: 10px;
+            font-size: 14px;
+            color: #1565c0;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .case-count i {
+            color: #1976d2;
+        }
+
+        /* 用例树状结构 */
+        .case-tree {
+            border: 1px solid #e0e0e0;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .tree-node {
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .tree-node:last-child {
+            border-bottom: none;
+        }
+
+        .tree-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 16px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            gap: 10px;
+        }
+
+        .tree-item:hover {
+            background-color: #f8f9fa;
+        }
+
+        .tree-item.level-0 {
+            background: linear-gradient(135deg, #e8eaf6 0%, #c5cae9 100%);
+            font-weight: 600;
+            color: #1a237e;
+        }
+
+        .tree-item.level-1 {
+            padding-left: 40px;
+        }
+
+        .tree-item.level-2 {
+            padding-left: 60px;
+        }
+
+        .tree-item.level-3 {
+            padding-left: 80px;
+        }
+
+        .tree-item.level-4 {
+            padding-left: 100px;
+        }
+
+        .tree-item.level-5 {
+            padding-left: 120px;
+        }
+
+        .tree-checkbox {
+            width: 18px;
+            height: 18px;
+            border: 2px solid #bdbdbd;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+
+        .tree-checkbox.checked {
+            background: #1976d2;
+            border-color: #1976d2;
+            color: #fff;
+        }
+
+        .tree-checkbox.indeterminate {
+            background: #1976d2;
+            border-color: #1976d2;
+        }
+
+        .tree-checkbox.indeterminate::after {
+            content: '';
+            width: 10px;
+            height: 2px;
+            background: #fff;
+        }
+
+        .tree-icon {
+            width: 20px;
+            text-align: center;
+            color: #1976d2;
+        }
+
+        .tree-label {
+            flex: 1;
+            font-size: 13px;
+            color: #333;
+        }
+
+        .tree-toggle {
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #999;
+            transition: transform 0.3s;
+        }
+
+        .tree-toggle.expanded {
+            transform: rotate(90deg);
+        }
+
+        .tree-children {
+            display: none;
+        }
+
+        .tree-children.show {
+            display: block;
+        }
+
+        /* 底部操作按钮 */
+        .footer-actions {
+            display: flex;
+            justify-content: space-between;
+            padding: 20px 30px;
+            background: #fafafa;
+            border-top: 1px solid #eee;
+        }
+
+        .btn {
+            padding: 12px 32px;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-prev {
+            background: #fff;
+            border: 2px solid #ddd;
+            color: #666;
+        }
+
+        .btn-prev:hover {
+            border-color: #bbb;
+            background: #fafafa;
+        }
+
+        .btn-next {
+            background: linear-gradient(135deg, #1976d2 0%, #1565c0 100%);
+            border: none;
+            color: #fff;
+        }
+
+        .btn-next:hover {
+            background: linear-gradient(135deg, #1565c0 0%, #0d47a1 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(25, 118, 210, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <!-- 顶部导航栏 -->
+    <div class="top-bar">
+        <button class="back-btn" onclick="location.href='workflow1.html'">
+            <i class="fas fa-arrow-left"></i>
+            返回上一步
+        </button>
+        <h1 class="page-title">新增分析</h1>
+    </div>
+
+    <!-- 步骤导航 -->
+    <div class="step-navigation">
+        <div class="step-item completed">
+            <div class="step-circle"><i class="fas fa-check"></i></div>
+            <span class="step-label">基础配置</span>
+        </div>
+        <div class="step-connector completed"></div>
+        <div class="step-item active">
+            <div class="step-circle">2</div>
+            <span class="step-label">用例配置</span>
+        </div>
+        <div class="step-connector"></div>
+        <div class="step-item">
+            <div class="step-circle">3</div>
+            <span class="step-label">环境配置</span>
+        </div>
+        <div class="step-connector"></div>
+        <div class="step-item">
+            <div class="step-circle">4</div>
+            <span class="step-label">执行操作</span>
+        </div>
+    </div>
+
+    <!-- 主要内容区域 -->
+    <div class="main-content">
+        <div class="section-card">
+            <div class="section-header">
+                <h2 class="section-title">
+                    <i class="fas fa-list-alt"></i>
+                    用例配置
+                </h2>
+            </div>
+            <div class="section-body">
+                <!-- 搜索和统计栏 -->
+                <div class="toolbar">
+                    <div class="search-box">
+                        <i class="fas fa-search"></i>
+                        <input type="text" placeholder="请输入用例编号搜索内容……">
+                    </div>
+                    <button class="btn-reset" onclick="resetSelection()">
+                        <i class="fas fa-undo"></i>
+                        重置勾选
+                    </button>
+                    <div class="case-count">
+                        <i class="fas fa-check-square"></i>
+                        当前选中：<span id="caseCount">6</span> 个用例
+                    </div>
+                </div>
+
+                <!-- 用例树状结构 -->
+                <div class="case-tree">
+                    <!-- Cases 根节点 -->
+                    <div class="tree-node">
+                        <div class="tree-item level-0" onclick="toggleNode(this)">
+                            <div class="tree-checkbox checked" onclick="toggleCheckbox(event, this)">
+                                <i class="fas fa-check"></i>
+                            </div>
+                            <i class="tree-icon fas fa-folder-open"></i>
+                            <span class="tree-label">Cases</span>
+                            <div class="tree-toggle expanded">
+                                <i class="fas fa-chevron-right"></i>
+                            </div>
+                        </div>
+                        <div class="tree-children show">
+                            <!-- 01_BLACKTEST -->
+                            <div class="tree-node">
+                                <div class="tree-item level-1" onclick="toggleNode(this)">
+                                    <div class="tree-checkbox checked" onclick="toggleCheckbox(event, this)">
+                                        <i class="fas fa-check"></i>
+                                    </div>
+                                    <i class="tree-icon fas fa-folder"></i>
+                                    <span class="tree-label">01_BLACKTEST</span>
+                                    <div class="tree-toggle">
+                                        <i class="fas fa-chevron-right"></i>
+                                    </div>
+                                </div>
+                                <div class="tree-children">
+                                    <div class="tree-item level-2" onclick="toggleCheckbox(event, this.parentElement.querySelector('.tree-checkbox'))">
+                                        <div class="tree-checkbox checked" onclick="toggleCheckbox(event, this)">
+                                            <i class="fas fa-check"></i>
+                                        </div>
+                                        <i class="tree-icon fas fa-file-code"></i>
+                                        <span class="tree-label">TC_LOG_NORMAL_RECORD_FUNC_004</span>
+                                    </div>
+                                    <div class="tree-item level-2" onclick="toggleCheckbox(event, this.parentElement.querySelector('.tree-checkbox'))">
+                                        <div class="tree-checkbox checked" onclick="toggleCheckbox(event, this)">
+                                            <i class="fas fa-check"></i>
+                                        </div>
+                                        <i class="tree-icon fas fa-file-code"></i>
+                                        <span class="tree-label">TC_ETH_LANSWITCH_PORT_FUNC_016</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 00_INIT -->
+                            <div class="tree-node">
+                                <div class="tree-item level-1" onclick="toggleNode(this)">
+                                    <div class="tree-checkbox" onclick="toggleCheckbox(event, this)"></div>
+                                    <i class="tree-icon fas fa-folder"></i>
+                                    <span class="tree-label">00_INIT</span>
+                                    <div class="tree-toggle">
+                                        <i class="fas fa-chevron-right"></i>
+                                    </div>
+                                </div>
+                                <div class="tree-children">
+                                    <div class="tree-item level-2" onclick="toggleCheckbox(event, this.parentElement.querySelector('.tree-checkbox'))">
+                                        <div class="tree-checkbox" onclick="toggleCheckbox(event, this)"></div>
+                                        <i class="tree-icon fas fa-file-code"></i>
+                                        <span class="tree-label">TC_INIT_SYSTEM_BOOT_001</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 01_ATM -->
+                            <div class="tree-node">
+                                <div class="tree-item level-1" onclick="toggleNode(this)">
+                                    <div class="tree-checkbox" onclick="toggleCheckbox(event, this)"></div>
+                                    <i class="tree-icon fas fa-folder"></i>
+                                    <span class="tree-label">01_ATM</span>
+                                    <div class="tree-toggle">
+                                        <i class="fas fa-chevron-right"></i>
+                                    </div>
+                                </div>
+                                <div class="tree-children">
+                                    <div class="tree-item level-2" onclick="toggleCheckbox(event, this.parentElement.querySelector('.tree-checkbox'))">
+                                        <div class="tree-checkbox" onclick="toggleCheckbox(event, this)"></div>
+                                        <i class="tree-icon fas fa-file-code"></i>
+                                        <span class="tree-label">TC_ATM_CONNECTIVITY_TEST_001</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 02_ETH -->
+                            <div class="tree-node">
+                                <div class="tree-item level-1" onclick="toggleNode(this)">
+                                    <div class="tree-checkbox" onclick="toggleCheckbox(event, this)"></div>
+                                    <i class="tree-icon fas fa-folder"></i>
+                                    <span class="tree-label">02_ETH</span>
+                                    <div class="tree-toggle">
+                                        <i class="fas fa-chevron-right"></i>
+                                    </div>
+                                </div>
+                                <div class="tree-children">
+                                    <div class="tree-item level-2" onclick="toggleCheckbox(event, this.parentElement.querySelector('.tree-checkbox'))">
+                                        <div class="tree-checkbox" onclick="toggleCheckbox(event, this)"></div>
+                                        <i class="tree-icon fas fa-file-code"></i>
+                                        <span class="tree-label">TC_ETH_BANDWIDTH_TEST_001</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 04_FIREWALL -->
+                            <div class="tree-node">
+                                <div class="tree-item level-1" onclick="toggleNode(this)">
+                                    <div class="tree-checkbox" onclick="toggleCheckbox(event, this)"></div>
+                                    <i class="tree-icon fas fa-folder"></i>
+                                    <span class="tree-label">04_FIREWALL</span>
+                                    <div class="tree-toggle">
+                                        <i class="fas fa-chevron-right"></i>
+                                    </div>
+                                </div>
+                                <div class="tree-children">
+                                    <div class="tree-item level-2" onclick="toggleCheckbox(event, this.parentElement.querySelector('.tree-checkbox'))">
+                                        <div class="tree-checkbox" onclick="toggleCheckbox(event, this)"></div>
+                                        <i class="tree-icon fas fa-file-code"></i>
+                                        <span class="tree-label">TC_FIREWALL_RULE_TEST_001</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 01_PACKETFILTER -->
+                            <div class="tree-node">
+                                <div class="tree-item level-1" onclick="toggleNode(this)">
+                                    <div class="tree-checkbox checked" onclick="toggleCheckbox(event, this)">
+                                        <i class="fas fa-check"></i>
+                                    </div>
+                                    <i class="tree-icon fas fa-folder-open"></i>
+                                    <span class="tree-label">01_PACKETFILTER</span>
+                                    <div class="tree-toggle expanded">
+                                        <i class="fas fa-chevron-right"></i>
+                                    </div>
+                                </div>
+                                <div class="tree-children show">
+                                    <div class="tree-node">
+                                        <div class="tree-item level-2" onclick="toggleNode(this)">
+                                            <div class="tree-checkbox checked" onclick="toggleCheckbox(event, this)">
+                                                <i class="fas fa-check"></i>
+                                            </div>
+                                            <i class="tree-icon fas fa-folder"></i>
+                                            <span class="tree-label">01_IPV4</span>
+                                            <div class="tree-toggle expanded">
+                                                <i class="fas fa-chevron-right"></i>
+                                            </div>
+                                        </div>
+                                        <div class="tree-children show">
+                                            <div class="tree-node">
+                                                <div class="tree-item level-3" onclick="toggleNode(this)">
+                                                    <div class="tree-checkbox checked" onclick="toggleCheckbox(event, this)">
+                                                        <i class="fas fa-check"></i>
+                                                    </div>
+                                                    <i class="tree-icon fas fa-folder"></i>
+                                                    <span class="tree-label">功能测试</span>
+                                                    <div class="tree-toggle">
+                                                        <i class="fas fa-chevron-right"></i>
+                                                    </div>
+                                                </div>
+                                                <div class="tree-children">
+                                                    <div class="tree-node">
+                                                        <div class="tree-item level-4" onclick="toggleNode(this)">
+                                                            <div class="tree-checkbox checked" onclick="toggleCheckbox(event, this)">
+                                                                <i class="fas fa-check"></i>
+                                                            </div>
+                                                            <i class="tree-icon fas fa-folder"></i>
+                                                            <span class="tree-label">主机禁PING和网管禁PING地址同时配置测试</span>
+                                                            <div class="tree-toggle">
+                                                                <i class="fas fa-chevron-right"></i>
+                                                            </div>
+                                                        </div>
+                                                        <div class="tree-children">
+                                                            <div class="tree-item level-5">
+                                                                <div class="tree-checkbox checked" onclick="toggleCheckbox(event, this)">
+                                                                    <i class="fas fa-check"></i>
+                                                                </div>
+                                                                <i class="tree-icon fas fa-file-code"></i>
+                                                                <span class="tree-label">3920R1</span>
+                                                            </div>
+                                                            <div class="tree-item level-5">
+                                                                <div class="tree-checkbox checked" onclick="toggleCheckbox(event, this)">
+                                                                    <i class="fas fa-check"></i>
+                                                                </div>
+                                                                <i class="tree-icon fas fa-file-code"></i>
+                                                                <span class="tree-label">RootBBU</span>
+                                                            </div>
+                                                            <div class="tree-item level-5">
+                                                                <div class="tree-checkbox checked" onclick="toggleCheckbox(event, this)">
+                                                                    <i class="fas fa-check"></i>
+                                                                </div>
+                                                                <i class="tree-icon fas fa-file-code"></i>
+                                                                <span class="tree-label">GTMUcc</span>
+                                                            </div>
+                                                            <div class="tree-item level-5">
+                                                                <div class="tree-checkbox checked" onclick="toggleCheckbox(event, this)">
+                                                                    <i class="fas fa-check"></i>
+                                                                </div>
+                                                                <i class="tree-icon fas fa-file-code"></i>
+                                                                <span class="tree-label">GTMUCOBTs</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="tree-item level-4">
+                                                        <div class="tree-checkbox" onclick="toggleCheckbox(event, this)"></div>
+                                                        <i class="tree-icon fas fa-file-code"></i>
+                                                        <span class="tree-label">主机禁PING和网管禁PING地址同时配置统计</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="tree-item level-3">
+                                                <div class="tree-checkbox" onclick="toggleCheckbox(event, this)"></div>
+                                                <i class="tree-icon fas fa-file-code"></i>
+                                                <span class="tree-label">性能测试</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 底部操作按钮 -->
+            <div class="footer-actions">
+                <button class="btn btn-prev" onclick="location.href='workflow1.html'">
+                    <i class="fas fa-arrow-left"></i>
+                    上一步
+                </button>
+                <button class="btn btn-next" onclick="location.href='workflow3.html'">
+                    下一步
+                    <i class="fas fa-arrow-right"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function toggleNode(element) {
+            const toggle = element.querySelector('.tree-toggle');
+            const children = element.parentElement.querySelector('.tree-children');
+            
+            if (toggle) {
+                toggle.classList.toggle('expanded');
+            }
+            
+            if (children) {
+                children.classList.toggle('show');
+                
+                // 切换文件夹图标
+                const icon = element.querySelector('.tree-icon');
+                if (icon) {
+                    if (children.classList.contains('show')) {
+                        icon.classList.remove('fa-folder');
+                        icon.classList.add('fa-folder-open');
+                    } else {
+                        icon.classList.remove('fa-folder-open');
+                        icon.classList.add('fa-folder');
+                    }
+                }
+            }
+        }
+
+        function toggleCheckbox(event, element) {
+            event.stopPropagation();
+            element.classList.toggle('checked');
+            
+            if (element.classList.contains('checked')) {
+                element.innerHTML = '<i class="fas fa-check"></i>';
+            } else {
+                element.innerHTML = '';
+            }
+            
+            updateCaseCount();
+        }
+
+        function resetSelection() {
+            document.querySelectorAll('.tree-checkbox').forEach(cb => {
+                cb.classList.remove('checked', 'indeterminate');
+                cb.innerHTML = '';
+            });
+            updateCaseCount();
+        }
+
+        function updateCaseCount() {
+            const checked = document.querySelectorAll('.tree-checkbox.checked').length;
+            document.getElementById('caseCount').textContent = checked;
+        }
+    </script>
+</body>
+</html>

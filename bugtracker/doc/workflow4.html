@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>新增分析 - 执行操作</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Microsoft YaHei', 'PingFang SC', 'Helvetica Neue', sans-serif;
+            background-color: #f0f2f5;
+            color: #333;
+            min-height: 100vh;
+        }
+
+        /* 顶部导航栏 */
+        .top-bar {
+            background: #fff;
+            padding: 16px 30px;
+            display: flex;
+            align-items: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .back-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: #f5f5f5;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            color: #666;
+            margin-right: 30px;
+        }
+
+        .back-btn:hover {
+            background: #eeeeee;
+            color: #333;
+        }
+
+        .page-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1a237e;
+        }
+
+        /* 步骤导航 */
+        .step-navigation {
+            background: linear-gradient(135deg, #1a237e 0%, #283593 100%);
+            padding: 40px 60px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .step-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .step-circle {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 600;
+            background: rgba(255,255,255,0.2);
+            color: rgba(255,255,255,0.6);
+            transition: all 0.3s;
+        }
+
+        .step-item.active .step-circle {
+            background: #64b5f6;
+            color: #fff;
+            box-shadow: 0 0 20px rgba(100, 181, 246, 0.5);
+        }
+
+        .step-item.completed .step-circle {
+            background: #81c784;
+            color: #fff;
+        }
+
+        .step-label {
+            font-size: 14px;
+            color: rgba(255,255,255,0.6);
+            transition: color 0.3s;
+        }
+
+        .step-item.active .step-label {
+            color: #fff;
+            font-weight: 500;
+        }
+
+        .step-item.completed .step-label {
+            color: #a5d6a7;
+        }
+
+        .step-connector {
+            width: 80px;
+            height: 2px;
+            background: rgba(255,255,255,0.2);
+            margin: 0 20px;
+        }
+
+        .step-connector.completed {
+            background: #81c784;
+        }
+
+        /* 主要内容区域 */
+        .main-content {
+            max-width: 1000px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+
+        .section-card {
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            overflow: hidden;
+        }
+
+        .section-header {
+            padding: 20px 30px;
+            border-bottom: 1px solid #eee;
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1a237e;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .section-title i {
+            color: #1976d2;
+        }
+
+        .section-body {
+            padding: 30px;
+        }
+
+        /* 配置汇总 */
+        .config-summary {
+            margin-bottom: 30px;
+        }
+
+        .summary-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .summary-title i {
+            color: #1976d2;
+        }
+
+        .summary-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        .summary-table tr {
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .summary-table tr:last-child {
+            border-bottom: none;
+        }
+
+        .summary-table th {
+            padding: 12px 16px;
+            text-align: left;
+            font-weight: 500;
+            color: #666;
+            background: #f8f9fa;
+            width: 120px;
+        }
+
+        .summary-table td {
+            padding: 12px 16px;
+            color: #333;
+        }
+
+        .summary-cases {
+            padding-left: 16px;
+        }
+
+        .summary-cases li {
+            padding: 6px 0;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 12px;
+            color: #555;
+            line-height: 1.5;
+        }
+
+        /* 日志输出 */
+        .log-section {
+            margin-bottom: 30px;
+        }
+
+        .log-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .log-title i {
+            color: #1976d2;
+        }
+
+        .log-output {
+            background: #1e1e1e;
+            border-radius: 10px;
+            padding: 20px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 13px;
+            line-height: 1.8;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .log-line {
+            margin: 0;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .log-info {
+            color: #64b5f6;
+        }
+
+        .log-success {
+            color: #81c784;
+        }
+
+        .log-error {
+            color: #e57373;
+        }
+
+        .log-warning {
+            color: #ffb74d;
+        }
+
+        /* 结果汇总 */
+        .result-section {
+            margin-bottom: 30px;
+        }
+
+        .result-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .result-title i {
+            color: #1976d2;
+        }
+
+        .result-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+
+        .result-card {
+            padding: 24px;
+            border-radius: 12px;
+            text-align: center;
+            transition: transform 0.3s;
+        }
+
+        .result-card:hover {
+            transform: translateY(-4px);
+        }
+
+        .result-card.success {
+            background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
+            border: 2px solid #81c784;
+        }
+
+        .result-card.failed {
+            background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%);
+            border: 2px solid #e57373;
+        }
+
+        .result-card.total {
+            background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+            border: 2px solid #64b5f6;
+        }
+
+        .result-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 12px;
+            font-size: 20px;
+        }
+
+        .result-card.success .result-icon {
+            background: #81c784;
+            color: #fff;
+        }
+
+        .result-card.failed .result-icon {
+            background: #e57373;
+            color: #fff;
+        }
+
+        .result-card.total .result-icon {
+            background: #64b5f6;
+            color: #fff;
+        }
+
+        .result-number {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .result-card.success .result-number {
+            color: #2e7d32;
+        }
+
+        .result-card.failed .result-number {
+            color: #c62828;
+        }
+
+        .result-card.total .result-number {
+            color: #1565c0;
+        }
+
+        .result-label {
+            font-size: 14px;
+            color: #666;
+        }
+
+        /* 底部操作按钮 */
+        .footer-actions {
+            display: flex;
+            justify-content: space-between;
+            padding: 20px 30px;
+            background: #fafafa;
+            border-top: 1px solid #eee;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 12px;
+        }
+
+        .btn {
+            padding: 12px 32px;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-prev {
+            background: #fff;
+            border: 2px solid #ddd;
+            color: #999;
+        }
+
+        .btn-prev:hover {
+            border-color: #bbb;
+            color: #666;
+        }
+
+        .btn-cancel {
+            background: #fff;
+            border: 2px solid #ddd;
+            color: #666;
+        }
+
+        .btn-cancel:hover {
+            border-color: #e57373;
+            color: #e57373;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #1976d2 0%, #1565c0 100%);
+            border: none;
+            color: #fff;
+        }
+
+        .btn-primary:hover {
+            background: linear-gradient(135deg, #1565c0 0%, #0d47a1 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(25, 118, 210, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <!-- 顶部导航栏 -->
+    <div class="top-bar">
+        <button class="back-btn" onclick="location.href='workflow3.html'">
+            <i class="fas fa-arrow-left"></i>
+            返回上一步
+        </button>
+        <h1 class="page-title">新增分析</h1>
+    </div>
+
+    <!-- 步骤导航 -->
+    <div class="step-navigation">
+        <div class="step-item completed">
+            <div class="step-circle"><i class="fas fa-check"></i></div>
+            <span class="step-label">基础配置</span>
+        </div>
+        <div class="step-connector completed"></div>
+        <div class="step-item completed">
+            <div class="step-circle"><i class="fas fa-check"></i></div>
+            <span class="step-label">用例配置</span>
+        </div>
+        <div class="step-connector completed"></div>
+        <div class="step-item completed">
+            <div class="step-circle"><i class="fas fa-check"></i></div>
+            <span class="step-label">环境配置</span>
+        </div>
+        <div class="step-connector completed"></div>
+        <div class="step-item active">
+            <div class="step-circle">4</div>
+            <span class="step-label">执行操作</span>
+        </div>
+    </div>
+
+    <!-- 主要内容区域 -->
+    <div class="main-content">
+        <div class="section-card">
+            <div class="section-header">
+                <h2 class="section-title">
+                    <i class="fas fa-play-circle"></i>
+                    执行操作
+                </h2>
+            </div>
+            <div class="section-body">
+                <!-- 配置汇总 -->
+                <div class="config-summary">
+                    <div class="summary-title">
+                        <i class="fas fa-clipboard-list"></i>
+                        配置汇总
+                    </div>
+                    <table class="summary-table">
+                        <tr>
+                            <th>仓库</th>
+                            <td>TRAN_xxx/xxx</td>
+                        </tr>
+                        <tr>
+                            <th>分支</th>
+                            <td>v5r18c00_master</td>
+                        </tr>
+                        <tr>
+                            <th>验证模式</th>
+                            <td>单节点验证</td>
+                        </tr>
+                        <tr>
+                            <th>commit节点</th>
+                            <td>12dd10b443e66ae5c8fdc7aa3f409f7c4c9e7a1615</td>
+                        </tr>
+                        <tr>
+                            <th>已勾选用例</th>
+                            <td>
+                                <ul class="summary-cases">
+                                    <li>python run_test.py --case-id TC_LOG_NORMAL_RECORD_FUNC_004_polymorph_UMPTbForm (环境: FO1_UMPTB_TOPO1_NEW 107)</li>
+                                    <li>python run_test.py --case-id TC_ETH_LANSWITCH_PORT_FUNC_016_polymorph_UMPTbForm (环境: FO1_UMPTB_TOPO1_NEW 107)</li>
+                                    <li>python run_test.py --case-id TC_NETWORKKLv4_PROADDR_STATS_IPSTAT_FUNC_001_polymorph_UMPTeForm (环境: FO3_UMPTEC05_TOPO1_NEW 310)</li>
+                                    <li>python run_test.py --case-id TC_NETWORKLV6_ADDRESS_MANAGE_LIMIT_001_polymorph_UMPTeForm (环境: FO3_UMPTEC05_TOPO1_NEW 310)</li>
+                                    <li>python run_test.py --case-id TC_SECU_IPSECV4_VPNSA_AUTO_FUNC_063_polymorph_UMPTgForm (环境: FO5_UMPPTH_UMPTG_TOPO2_LB2 544)</li>
+                                </ul>
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+
+                <!-- 日志输出 -->
+                <div class="log-section">
+                    <div class="log-title">
+                        <i class="fas fa-terminal"></i>
+                        日志输出
+                    </div>
+                    <div class="log-output">
+                        <p class="log-line log-info">[INFO] 17:46:28 开始执行用例：case-002</p>
+                        <p class="log-line log-success">[SUCCESS] 17:46:29 case-002 - 用例执行通过</p>
+                        <p class="log-line log-info">[INFO] 17:46:29 开始执行用例：case-003</p>
+                        <p class="log-line log-success">[SUCCESS] 17:46:30 case-003 - 用例执行通过</p>
+                        <p class="log-line log-info">[INFO] 17:46:31 开始执行用例：case-008</p>
+                        <p class="log-line log-error">[ERROR] 17:46:32 case-008 - 用例执行失败：断言失败</p>
+                        <p class="log-line log-info">[INFO] 17:46:32 开始执行用例：case-007</p>
+                        <p class="log-line log-success">[SUCCESS] 17:46:33 case-007 - 用例执行通过</p>
+                        <p class="log-line log-info">[INFO] 17:46:33 所有用例执行完成</p>
+                        <p class="log-line log-success">[SUCCESS] 17:46:35 测试报告已生成：report-20230409.html</p>
+                    </div>
+                </div>
+
+                <!-- 结果汇总 -->
+                <div class="result-section">
+                    <div class="result-title">
+                        <i class="fas fa-chart-pie"></i>
+                        结果汇总
+                    </div>
+                    <div class="result-cards">
+                        <div class="result-card success">
+                            <div class="result-icon">
+                                <i class="fas fa-check"></i>
+                            </div>
+                            <div class="result-number">4</div>
+                            <div class="result-label">成功用例</div>
+                        </div>
+                        <div class="result-card failed">
+                            <div class="result-icon">
+                                <i class="fas fa-times"></i>
+                            </div>
+                            <div class="result-number">1</div>
+                            <div class="result-label">失败用例</div>
+                        </div>
+                        <div class="result-card total">
+                            <div class="result-icon">
+                                <i class="fas fa-list"></i>
+                            </div>
+                            <div class="result-number">5</div>
+                            <div class="result-label">总用例数</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 底部操作按钮 -->
+            <div class="footer-actions">
+                <button class="btn btn-prev" onclick="location.href='workflow3.html'">
+                    <i class="fas fa-arrow-left"></i>
+                    上一步
+                </button>
+                <div class="btn-group">
+                    <button class="btn btn-cancel" onclick="location.href='index.html'">
+                        <i class="fas fa-ban"></i>
+                        取消
+                    </button>
+                    <button class="btn btn-primary" onclick="location.href='index.html'">
+                        <i class="fas fa-search-location"></i>
+                        开始定位
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

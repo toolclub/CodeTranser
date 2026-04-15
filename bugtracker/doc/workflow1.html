@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>新增分析 - 基础配置</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Microsoft YaHei', 'PingFang SC', 'Helvetica Neue', sans-serif;
+            background-color: #f0f2f5;
+            color: #333;
+            min-height: 100vh;
+        }
+
+        /* 顶部导航栏 */
+        .top-bar {
+            background: #fff;
+            padding: 16px 30px;
+            display: flex;
+            align-items: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .back-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: #f5f5f5;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            color: #666;
+            margin-right: 30px;
+        }
+
+        .back-btn:hover {
+            background: #eeeeee;
+            color: #333;
+        }
+
+        .page-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1a237e;
+        }
+
+        /* 步骤导航 */
+        .step-navigation {
+            background: linear-gradient(135deg, #1a237e 0%, #283593 100%);
+            padding: 40px 60px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .step-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .step-circle {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 600;
+            background: rgba(255,255,255,0.2);
+            color: rgba(255,255,255,0.6);
+            transition: all 0.3s;
+        }
+
+        .step-item.active .step-circle {
+            background: #64b5f6;
+            color: #fff;
+            box-shadow: 0 0 20px rgba(100, 181, 246, 0.5);
+        }
+
+        .step-item.completed .step-circle {
+            background: #81c784;
+            color: #fff;
+        }
+
+        .step-label {
+            font-size: 14px;
+            color: rgba(255,255,255,0.6);
+            transition: color 0.3s;
+        }
+
+        .step-item.active .step-label {
+            color: #fff;
+            font-weight: 500;
+        }
+
+        .step-item.completed .step-label {
+            color: #a5d6a7;
+        }
+
+        .step-connector {
+            width: 80px;
+            height: 2px;
+            background: rgba(255,255,255,0.2);
+            margin: 0 20px;
+        }
+
+        .step-connector.completed {
+            background: #81c784;
+        }
+
+        /* 主要内容区域 */
+        .main-content {
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+
+        .section-card {
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            overflow: hidden;
+        }
+
+        .section-header {
+            padding: 20px 30px;
+            border-bottom: 1px solid #eee;
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1a237e;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .section-title i {
+            color: #1976d2;
+        }
+
+        .section-body {
+            padding: 30px;
+        }
+
+        /* 验证模式标签 */
+        .mode-tabs {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 30px;
+        }
+
+        .mode-tab {
+            padding: 12px 28px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 14px;
+            font-weight: 500;
+            color: #666;
+            background: #fff;
+        }
+
+        .mode-tab:hover {
+            border-color: #1976d2;
+            color: #1976d2;
+        }
+
+        .mode-tab.active {
+            border-color: #1976d2;
+            background: linear-gradient(135deg, #1976d2 0%, #1565c0 100%);
+            color: #fff;
+        }
+
+        /* 表单元素 */
+        .form-group {
+            margin-bottom: 24px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .form-label .optional {
+            color: #999;
+            font-weight: normal;
+            font-size: 12px;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 14px;
+            outline: none;
+            transition: all 0.3s;
+        }
+
+        .form-input:focus {
+            border-color: #1976d2;
+            box-shadow: 0 0 0 4px rgba(25, 118, 210, 0.1);
+        }
+
+        .form-input::placeholder {
+            color: #aaa;
+        }
+
+        .form-hint {
+            font-size: 12px;
+            color: #999;
+            margin-top: 8px;
+            padding-left: 4px;
+        }
+
+        /* 多节点配置 */
+        .multi-node-config {
+            display: none;
+        }
+
+        .multi-node-config.show {
+            display: block;
+        }
+
+        .single-node-config {
+            display: none;
+        }
+
+        .single-node-config.show {
+            display: block;
+        }
+
+        /* 底部操作按钮 */
+        .footer-actions {
+            display: flex;
+            justify-content: space-between;
+            padding: 20px 30px;
+            background: #fafafa;
+            border-top: 1px solid #eee;
+        }
+
+        .btn {
+            padding: 12px 32px;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-prev {
+            background: #fff;
+            border: 2px solid #ddd;
+            color: #999;
+        }
+
+        .btn-prev:hover {
+            border-color: #bbb;
+            color: #666;
+        }
+
+        .btn-next {
+            background: linear-gradient(135deg, #1976d2 0%, #1565c0 100%);
+            border: none;
+            color: #fff;
+        }
+
+        .btn-next:hover {
+            background: linear-gradient(135deg, #1565c0 0%, #0d47a1 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(25, 118, 210, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <!-- 顶部导航栏 -->
+    <div class="top-bar">
+        <button class="back-btn" onclick="location.href='index.html'">
+            <i class="fas fa-arrow-left"></i>
+            返回列表
+        </button>
+        <h1 class="page-title">新增分析</h1>
+    </div>
+
+    <!-- 步骤导航 -->
+    <div class="step-navigation">
+        <div class="step-item active">
+            <div class="step-circle">1</div>
+            <span class="step-label">基础配置</span>
+        </div>
+        <div class="step-connector"></div>
+        <div class="step-item">
+            <div class="step-circle">2</div>
+            <span class="step-label">用例配置</span>
+        </div>
+        <div class="step-connector"></div>
+        <div class="step-item">
+            <div class="step-circle">3</div>
+            <span class="step-label">环境配置</span>
+        </div>
+        <div class="step-connector"></div>
+        <div class="step-item">
+            <div class="step-circle">4</div>
+            <span class="step-label">执行操作</span>
+        </div>
+    </div>
+
+    <!-- 主要内容区域 -->
+    <div class="main-content">
+        <div class="section-card">
+            <div class="section-header">
+                <h2 class="section-title">
+                    <i class="fas fa-cog"></i>
+                    基础配置
+                </h2>
+            </div>
+            <div class="section-body">
+                <!-- 验证模式选择 -->
+                <div class="form-group">
+                    <label class="form-label">验证模式</label>
+                    <div class="mode-tabs">
+                        <div class="mode-tab active" onclick="selectMode(this, 'single')">
+                            <i class="fas fa-server"></i>
+                            单节点验证
+                        </div>
+                        <div class="mode-tab" onclick="selectMode(this, 'multi')">
+                            <i class="fas fa-network-wired"></i>
+                            多节点验证
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 单节点配置 -->
+                <div class="single-node-config show">
+                    <div class="form-group">
+                        <label class="form-label">代码仓库</label>
+                        <input type="text" class="form-input" placeholder="请输入内容">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">目标分支</label>
+                        <input type="text" class="form-input" placeholder="请输入内容">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Commit ID <span class="optional">（可选，不填则使用最新commit）</span></label>
+                        <input type="text" class="form-input" placeholder="请输入内容">
+                    </div>
+                </div>
+
+                <!-- 多节点配置 -->
+                <div class="multi-node-config">
+                    <div class="form-group">
+                        <label class="form-label">代码仓库</label>
+                        <input type="text" class="form-input" placeholder="请输入内容">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">目标分支</label>
+                        <input type="text" class="form-input" placeholder="请输入内容">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">起始 Commit ID</label>
+                        <input type="text" class="form-input" placeholder="请输入内容">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">结束 Commit ID</label>
+                        <input type="text" class="form-input" placeholder="请输入内容">
+                    </div>
+                </div>
+            </div>
+
+            <!-- 底部操作按钮 -->
+            <div class="footer-actions">
+                <button class="btn btn-prev" onclick="location.href='index.html'">
+                    <i class="fas fa-arrow-left"></i>
+                    上一步
+                </button>
+                <button class="btn btn-next" onclick="location.href='workflow2.html'">
+                    下一步
+                    <i class="fas fa-arrow-right"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function selectMode(element, mode) {
+            // 移除所有 active 类
+            document.querySelectorAll('.mode-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // 添加 active 类到当前元素
+            element.classList.add('active');
+            
+            // 切换配置显示
+            const singleConfig = document.querySelector('.single-node-config');
+            const multiConfig = document.querySelector('.multi-node-config');
+            
+            if (mode === 'single') {
+                singleConfig.classList.add('show');
+                multiConfig.classList.remove('show');
+            } else {
+                singleConfig.classList.remove('show');
+                multiConfig.classList.add('show');
+            }
+        }
+    </script>
+</body>
+</html>
