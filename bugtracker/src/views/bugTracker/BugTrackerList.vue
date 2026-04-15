@@ -37,7 +37,18 @@
                     :header-cell-style="{ background: '#f8f9fa', color: '#495057', fontWeight: '600', fontSize: '13px' }"
                     :cell-style="{ fontSize: '13px', color: '#555' }"
                 >
-                    <el-table-column prop="taskId" label="任务ID" min-width="110" />
+                    <el-table-column label="任务ID" min-width="110">
+                        <template #default="{ row }">
+                            <el-link
+                                type="primary"
+                                :underline="false"
+                                style="font-weight: 600;"
+                                @click="goToDetail(row)"
+                            >
+                                {{ row.taskId }}
+                            </el-link>
+                        </template>
+                    </el-table-column>
                     <el-table-column prop="mode" label="验证模式" min-width="110" />
                     <el-table-column prop="repoName" label="代码仓库名称" min-width="130" />
                     <el-table-column prop="branch" label="构建分支" min-width="110" />
@@ -114,9 +125,9 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, ElLink } from 'element-plus'
 import { Search, Plus, RefreshRight, Delete } from '@element-plus/icons-vue'
-import { getBuildRecordList, deleteBuildRecord, rerunTask } from '@/api/bugTracker/index'
+import { getBuildRecordListObj, deleteBuildRecordObj, rerunTaskObj } from '@/api/bugTracker/business'
 
 const router = useRouter()
 
@@ -204,6 +215,10 @@ async function handleDelete(row) {
 
 function goToCreate() {
     router.push({ name: 'BugTrackerCreate' })
+}
+
+function goToDetail(row) {
+    router.push({ name: 'BugTrackerDetail', query: { taskId: row.taskId } })
 }
 
 onMounted(loadData)
