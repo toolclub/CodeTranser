@@ -254,4 +254,24 @@
   ▎  字符串数组),无 position 字段。其他共识见 00 章 §0.12。
 
   ---
-  摘要终。保留这份 + impl-docs 所有 md = 上下文完整恢复。
+  10. 前端原型(2026-04-18 追加)
+
+  - 产出目录:/workspace/CodeTranser/Designer/impl-docs-frontend/
+  - 栈定型:Vue 3 + Pinia + Vite + antv X6(非 VueFlow,否决了 §25.11 的选型)
+  - 前端不做鉴权,所有权限判断走后端 @require_admin / @require_user 装饰器;前端收 401 跳登录、403 跳 no-permission.html。
+  - 高保真原型(直接浏览器打开),11 个页面 + 共享 CSS:
+      * index.html              导航(入口)
+      * pages/graph-list.html   CascadeGraph 列表
+      * pages/canvas-editor.html 画布编辑器 · 真实 antv X6 CDN 交互
+      * pages/template-library.html 节点模板库
+      * pages/template-editor.html  元模板驱动表单 + JSON 实时预览
+      * pages/scenarios.html    input / expected JSON 两列编辑器
+      * pages/run-list.html     Run 列表
+      * pages/run-detail.html   三阶段时间线 + LLM 驱动对话 + trace
+      * pages/code-diff.html    多文件 unified diff
+      * pages/review.html       画布上钉评论 · 线程 · 批准
+      * pages/no-permission.html 401/403/404/500 兜底
+  - 后续如果要落到真实 Vue 代码:按页面切分 components/ + pages/ 即可,原型是视觉契约。
+
+  ---
+  摘要终。保留这份 + impl-docs 所有 md + impl-docs-frontend/ 所有 html = 上下文完整恢复。

@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>无权限 · 级跳</title>
+<link rel="stylesheet" href="../assets/common.css">
+<style>
+  body { background: var(--surface-2); }
+  .empty-wrap {
+    min-height: 100vh; display: grid; place-items: center; padding: 48px 24px;
+  }
+  .state-card {
+    background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg);
+    padding: 40px 48px; max-width: 520px;
+    box-shadow: var(--shadow);
+    text-align: center;
+  }
+  .state-card .ic-wrap {
+    width: 96px; height: 96px; border-radius: 50%;
+    margin: 0 auto 20px;
+    display: grid; place-items: center;
+    background: var(--danger-soft);
+  }
+  .state-card h1 { font-size: 22px; margin: 0 0 8px; font-weight: 600; }
+  .state-card .desc { color: var(--text-muted); font-size: 14px; line-height: 1.6; }
+  .state-card .actions { margin-top: 24px; display: flex; gap: 8px; justify-content: center; }
+  .state-card .detail {
+    margin-top: 24px;
+    background: var(--surface-2); border-radius: var(--radius-sm);
+    padding: 12px 14px;
+    font-family: var(--mono); font-size: 11px; text-align: left;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+  }
+  .state-card .detail .row { display: flex; gap: 8px; padding: 2px 0; }
+  .state-card .detail .k { color: var(--text); font-weight: 500; min-width: 80px; }
+
+  .toggle-states {
+    display: flex; gap: 6px; justify-content: center; margin-top: 24px;
+  }
+  .toggle-states .opt { padding: 4px 12px; border-radius: var(--radius-sm); font-size: 12px; cursor: pointer; background: #fff; border: 1px solid var(--border); color: var(--text-muted); }
+  .toggle-states .opt.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+  .states-preview {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
+    max-width: 1080px; margin: 24px auto 0;
+  }
+  .preview-card { background: #fff; border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; text-align: center; }
+  .preview-card .ic-wrap { width: 60px; height: 60px; border-radius: 50%; margin: 0 auto 12px; display: grid; place-items: center; }
+  .preview-card h3 { margin: 0 0 4px; font-size: 14px; }
+  .preview-card p { color: var(--text-muted); font-size: 12px; line-height: 1.5; margin: 0; }
+
+  .hdr {
+    background: #fff; border-bottom: 1px solid var(--border); padding: 10px 20px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .hdr .logo-mark {
+    width: 28px; height: 28px;
+    background: linear-gradient(135deg, var(--primary), var(--violet));
+    border-radius: 6px;
+    display: grid; place-items: center;
+    color: #fff; font-weight: 700; font-size: 14px;
+  }
+</style>
+</head>
+<body>
+<div class="hdr">
+  <div class="logo-mark">级</div>
+  <strong style="font-size:14px">级跳</strong>
+  <div style="flex:1"></div>
+  <a href="../index.html" class="btn sm">返回原型导航</a>
+</div>
+
+<div class="empty-wrap">
+  <div>
+    <div class="state-card">
+      <div class="ic-wrap">
+        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2"/>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+        </svg>
+      </div>
+      <h1>没有访问权限</h1>
+      <div class="desc">
+        你的账号缺少访问「admin / 模板发布」的权限。请联系管理员开通。
+        <br>前端不做鉴权判断,这个页面来自后端 <span class="mono">@require_admin</span> 装饰器返回的 <span class="mono">PERM_DENIED</span>。
+      </div>
+
+      <div class="detail">
+        <div class="row"><span class="k">code</span>403 · PERM_DENIED</div>
+        <div class="row"><span class="k">message</span>需要 admin 角色</div>
+        <div class="row"><span class="k">path</span>POST /api/admin/node-templates</div>
+        <div class="row"><span class="k">required</span>role in [admin]</div>
+        <div class="row"><span class="k">yours</span>role = designer</div>
+        <div class="row"><span class="k">trace_id</span>01JRK3F7H2Q4X8N9T6V...</div>
+      </div>
+
+      <div class="actions">
+        <button class="btn" onclick="history.back()">返回上一页</button>
+        <button class="btn primary" onclick="alert('已发送申请')">申请开通 admin</button>
+      </div>
+    </div>
+
+    <div class="toggle-states">
+      <span class="opt active">403 权限不足</span>
+      <span class="opt">401 未登录</span>
+      <span class="opt">404 资源不存在</span>
+      <span class="opt">500 后端异常</span>
+      <span class="opt">网络错误</span>
+    </div>
+
+    <div class="states-preview">
+      <div class="preview-card">
+        <div class="ic-wrap" style="background:var(--warning-soft)">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+        </div>
+        <h3>401 未登录</h3>
+        <p>触发统一登录回跳。前端只检测 HTTP code,登录由 SSO gateway 处理。</p>
+      </div>
+      <div class="preview-card">
+        <div class="ic-wrap" style="background:var(--surface-3)">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg>
+        </div>
+        <h3>404 资源不存在</h3>
+        <p>图 / 模板 / Run 被删除或 id 无效。直接给返回按钮,不暴露后端细节。</p>
+      </div>
+      <div class="preview-card">
+        <div class="ic-wrap" style="background:var(--danger-soft)">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </div>
+        <h3>500 服务器异常</h3>
+        <p>带 trace_id 和复制按钮。给用户"联系支持"入口,不暴露堆栈。</p>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

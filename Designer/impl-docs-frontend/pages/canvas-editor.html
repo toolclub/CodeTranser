@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>画布编辑器 · 级跳</title>
+<link rel="stylesheet" href="../assets/common.css">
+<script src="https://unpkg.com/@antv/x6@2.18.1/dist/index.js"></script>
+<script src="https://unpkg.com/@antv/layout@0.3.25/dist/layout.min.js"></script>
+<style>
+  .app {
+    grid-template-columns: 56px 280px 1fr 340px;
+    grid-template-areas:
+      "topbar topbar topbar topbar"
+      "sidebar left canvas right";
+  }
+  .left-panel {
+    background: #fff;
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .left-panel .tabs {
+    display: flex; border-bottom: 1px solid var(--border); padding: 4px 8px;
+    gap: 2px;
+  }
+  .left-panel .tab {
+    padding: 8px 12px; font-size: 13px; color: var(--text-muted);
+    border-bottom: 2px solid transparent; cursor: pointer;
+  }
+  .left-panel .tab.active { color: var(--primary); border-color: var(--primary); font-weight: 500; }
+  .search-box { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  .categories { overflow-y: auto; flex: 1; padding: 8px 0; }
+  .category {
+    padding: 4px 0;
+  }
+  .category > .cat-title {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 12px; font-size: 11px; font-weight: 600;
+    color: var(--text-muted); text-transform: uppercase; letter-spacing: .4px;
+    cursor: pointer;
+  }
+  .category > .cat-title .count {
+    background: var(--surface-3); color: var(--text-muted);
+    padding: 0 6px; border-radius: 999px; font-size: 10px;
+    margin-left: auto;
+  }
+  .category .items { display: flex; flex-direction: column; gap: 2px; padding: 0 8px; }
+  .tpl-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    cursor: grab;
+    border: 1px solid transparent;
+    transition: all .12s;
+  }
+  .tpl-item:hover { background: var(--primary-soft); border-color: rgba(99,102,241,.2); }
+  .tpl-item .ic {
+    width: 28px; height: 28px; border-radius: 6px;
+    display: grid; place-items: center;
+    font-size: 12px; color: #fff; font-weight: 600;
+    flex-shrink: 0;
+  }
+  .tpl-item .meta { flex: 1; min-width: 0; }
+  .tpl-item .name { font-size: 13px; font-weight: 500; color: var(--text); }
+  .tpl-item .desc { font-size: 11px; color: var(--text-muted); line-height: 1.3; white-space:nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tpl-item .engine {
+    font-size: 9px; padding: 0 4px; border-radius: 3px;
+    background: var(--surface-3); color: var(--text-muted);
+    font-family: var(--mono); font-weight: 500;
+  }
+
+  /* Canvas area */
+  .canvas-wrap {
+    position: relative;
+    background:
+      radial-gradient(circle, #d1d5db 1px, transparent 1px) 0 0/24px 24px,
+      #f6f7fb;
+  }
+  #x6-canvas {
+    width: 100%; height: 100%;
+  }
+  .canvas-toolbar {
+    position: absolute; top: 12px; left: 12px;
+    display: flex; gap: 4px; padding: 4px;
+    background: #fff; border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm);
+    z-index: 10;
+  }
+  .canvas-toolbar .tool-btn {
+    width: 30px; height: 30px; display: grid; place-items: center;
+    border-radius: var(--radius-sm); color: var(--text-muted);
+  }
+  .canvas-toolbar .tool-btn:hover { background: var(--surface-2); color: var(--text); }
+  .canvas-toolbar .tool-btn.active { background: var(--primary-soft); color: var(--primary); }
+  .canvas-toolbar .sep { width: 1px; background: var(--border); margin: 4px 2px; }
+
+  .canvas-bottombar {
+    position: absolute; bottom: 12px; right: 12px;
+    display: flex; gap: 6px; align-items: center;
+    background: #fff; border: 1px solid var(--border); border-radius: var(--radius); padding: 4px 8px;
+    font-size: 12px; box-shadow: var(--shadow-sm);
+    z-index: 10;
+  }
+  .canvas-bottombar .zoom-btn {
+    width: 22px; height: 22px; border-radius: 4px; color: var(--text-muted);
+  }
+  .canvas-bottombar .zoom-btn:hover { background: var(--surface-2); }
+
+  .minimap {
+    position: absolute; bottom: 12px; left: 12px;
+    width: 200px; height: 140px;
+    background: #fff; border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+    z-index: 10;
+  }
+  .minimap .mini-header {
+    padding: 4px 8px; font-size: 11px; color: var(--text-muted);
+    border-bottom: 1px solid var(--border); background: var(--surface-2);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .minimap .mini-body { position: relative; height: calc(100% - 22px); }
+  .minimap .mini-viewport {
+    position: absolute; border: 2px solid var(--primary); background: rgba(99,102,241,.08);
+    border-radius: 2px;
+  }
+
+  /* Right panel */
+  .right-panel {
+    background: #fff; border-left: 1px solid var(--border);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .right-panel .tabs {
+    display: flex; border-bottom: 1px solid var(--border);
+    padding: 4px 8px; gap: 2px;
+  }
+  .right-panel .tab {
+    padding: 8px 12px; font-size: 13px; color: var(--text-muted);
+    border-bottom: 2px solid transparent; cursor: pointer;
+  }
+  .right-panel .tab.active { color: var(--primary); border-color: var(--primary); font-weight: 500; }
+  .prop-body { padding: 12px 14px; overflow-y: auto; flex: 1; }
+
+  .selected-card {
+    border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 12px; margin-bottom: 16px;
+    background: var(--surface-2);
+  }
+  .selected-card .hdr { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .selected-card .hdr .ic {
+    width: 32px; height: 32px; border-radius: 6px; display: grid; place-items: center;
+    color: #fff; font-weight: 600; font-size: 13px;
+  }
+  .selected-card .hdr .title { font-weight: 600; font-size: 14px; }
+  .selected-card .hdr .subtitle { font-size: 11px; color: var(--text-muted); font-family: var(--mono); }
+  .selected-card .row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 12px; }
+  .selected-card .row .k { color: var(--text-muted); }
+  .selected-card .row .v { color: var(--text); font-family: var(--mono); font-size: 11px; }
+
+  .field {
+    background: #fff; border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    margin-bottom: 10px;
+    padding: 10px 12px;
+  }
+  .field .flabel {
+    font-size: 11px; font-weight: 600; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: .3px;
+    display: flex; align-items: center; gap: 6px;
+    margin-bottom: 6px;
+  }
+  .field .flabel .t { padding: 1px 5px; border-radius: 3px; font-family: var(--mono); font-size: 10px; background: var(--surface-3); color: var(--primary); text-transform: none; letter-spacing: 0; }
+
+  .bundle-members {
+    background: #fff; border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 8px;
+  }
+  .bundle-members .mbr {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px; border-radius: var(--radius-sm);
+    font-size: 12px;
+  }
+  .bundle-members .mbr:hover { background: var(--surface-2); }
+  .bundle-members .mbr .pill { font-family: var(--mono); font-size: 10px; color: var(--text-dim); margin-left: auto; }
+
+  /* Floating run bar */
+  .run-fab {
+    position: absolute; top: 12px; right: 360px;
+    display: flex; gap: 6px; align-items: center;
+    background: #fff; border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 4px; box-shadow: var(--shadow-sm);
+    z-index: 10;
+  }
+  .run-fab select {
+    border: none; background: transparent; font-size: 12px; padding: 4px 6px;
+    color: var(--text); outline: none;
+  }
+  .run-fab .divider-v { width: 1px; height: 20px; background: var(--border); margin: 0 2px; }
+
+  /* Tiny icons (inline svg) */
+  .i16 { width: 16px; height: 16px; }
+
+  /* Saving indicator */
+  .save-ind {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; color: var(--text-muted);
+  }
+  .save-ind .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); }
+
+  .context-hint {
+    position: absolute; top: 60px; right: 360px;
+    background: rgba(15,23,42,.9); color: #fff;
+    padding: 10px 14px; border-radius: var(--radius);
+    font-size: 12px; line-height: 1.5; max-width: 260px;
+    z-index: 9;
+    display: none;
+  }
+  .context-hint kbd { background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.25); color: #fff; }
+
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="logo"><span class="logo-mark">级</span><span>级跳</span></div>
+    <div class="breadcrumb">
+      <a href="graph-list.html">图列表</a><span class="sep">/</span>
+      <strong>报文处理主流水线 · inbound</strong>
+      <span class="tag outline mono" style="margin-left:8px">g_a1b2c3d4</span>
+      <span class="tag primary">draft v18</span>
+    </div>
+    <div class="spacer"></div>
+    <div class="save-ind"><span class="dot"></span>已自动保存 · 刚刚</div>
+    <div class="actions">
+      <button class="btn ghost sm" title="撤销"><svg class="i16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/></svg></button>
+      <button class="btn ghost sm" title="重做"><svg class="i16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 15-6.7L21 13"/></svg></button>
+      <button class="btn sm"><svg class="i16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v6M12 17v6M4.2 4.2l4.2 4.2M15.6 15.6l4.2 4.2M1 12h6M17 12h6M4.2 19.8l4.2-4.2M15.6 8.4l4.2-4.2"/></svg>自动布局</button>
+      <button class="btn sm">版本历史</button>
+      <button class="btn primary sm">
+        <svg class="i16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+        发布版本
+      </button>
+      <div class="user"><div class="avatar">YZ</div>杨震</div>
+    </div>
+  </div>
+
+  <nav class="sidebar-nav">
+    <a class="nav-item" href="graph-list.html"><svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span class="tip">图列表</span></a>
+    <a class="nav-item active"><svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="18" r="3"/><line x1="9" y1="6" x2="15" y2="6"/><line x1="6" y1="9" x2="6" y2="15"/><line x1="9" y1="18" x2="15" y2="18"/></svg><span class="tip">画布</span></a>
+    <a class="nav-item" href="template-library.html"><svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 7L12 3L4 7L12 11L20 7Z"/><path d="M4 12L12 16L20 12"/></svg><span class="tip">模板库</span></a>
+    <a class="nav-item" href="run-list.html"><svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg><span class="tip">运行</span></a>
+  </nav>
+
+  <!-- Left: Template library -->
+  <aside class="left-panel">
+    <div class="tabs">
+      <div class="tab active">节点库</div>
+      <div class="tab">图层</div>
+      <div class="tab">搜索</div>
+    </div>
+    <div class="search-box">
+      <input class="input" placeholder="搜索节点模板..." />
+    </div>
+    <div class="categories">
+      <div class="category">
+        <div class="cat-title">▼ 表操作 <span class="count">6</span></div>
+        <div class="items">
+          <div class="tpl-item" draggable="true" data-tpl="IndexTableLookup" data-color="#6366f1">
+            <div class="ic" style="background:#6366f1">IT</div>
+            <div class="meta">
+              <div class="name">IndexTableLookup</div>
+              <div class="desc">根据 key 在索引表查找记录</div>
+            </div>
+            <span class="engine">py</span>
+          </div>
+          <div class="tpl-item" draggable="true" data-tpl="HashMapGet" data-color="#6366f1">
+            <div class="ic" style="background:#6366f1">HM</div>
+            <div class="meta">
+              <div class="name">HashMapGet</div>
+              <div class="desc">从哈希表取值,命中/未命中</div>
+            </div>
+            <span class="engine">py</span>
+          </div>
+          <div class="tpl-item" draggable="true" data-tpl="RangeSearch" data-color="#6366f1">
+            <div class="ic" style="background:#6366f1">RS</div>
+            <div class="meta">
+              <div class="name">RangeSearch</div>
+              <div class="desc">范围扫描带 limit</div>
+            </div>
+            <span class="engine">llm</span>
+          </div>
+        </div>
+      </div>
+      <div class="category">
+        <div class="cat-title">▼ 校验 <span class="count">4</span></div>
+        <div class="items">
+          <div class="tpl-item" draggable="true" data-tpl="HashCheck" data-color="#10b981">
+            <div class="ic" style="background:#10b981">HC</div>
+            <div class="meta">
+              <div class="name">HashCheck</div>
+              <div class="desc">校验报文 hash 与预期一致</div>
+            </div>
+            <span class="engine">py</span>
+          </div>
+          <div class="tpl-item" draggable="true" data-tpl="SchemaValidate" data-color="#10b981">
+            <div class="ic" style="background:#10b981">SV</div>
+            <div class="meta">
+              <div class="name">SchemaValidate</div>
+              <div class="desc">JSON Schema 校验</div>
+            </div>
+            <span class="engine">py</span>
+          </div>
+          <div class="tpl-item" draggable="true" data-tpl="SignCheck" data-color="#10b981">
+            <div class="ic" style="background:#10b981">SG</div>
+            <div class="meta">
+              <div class="name">SignCheck</div>
+              <div class="desc">RSA 签名验证</div>
+            </div>
+            <span class="engine">llm</span>
+          </div>
+        </div>
+      </div>
+      <div class="category">
+        <div class="cat-title">▼ 分流 <span class="count">3</span></div>
+        <div class="items">
+          <div class="tpl-item" draggable="true" data-tpl="BranchByField" data-color="#8b5cf6">
+            <div class="ic" style="background:#8b5cf6">BF</div>
+            <div class="meta">
+              <div class="name">BranchByField</div>
+              <div class="desc">按字段值分 2–N 路</div>
+            </div>
+            <span class="engine">py</span>
+          </div>
+          <div class="tpl-item" draggable="true" data-tpl="ConditionGate" data-color="#8b5cf6">
+            <div class="ic" style="background:#8b5cf6">CG</div>
+            <div class="meta">
+              <div class="name">ConditionGate</div>
+              <div class="desc">表达式门控</div>
+            </div>
+            <span class="engine">llm</span>
+          </div>
+        </div>
+      </div>
+      <div class="category">
+        <div class="cat-title">▼ 动作 <span class="count">5</span></div>
+        <div class="items">
+          <div class="tpl-item" draggable="true" data-tpl="WriteKafka" data-color="#f59e0b">
+            <div class="ic" style="background:#f59e0b">WK</div>
+            <div class="meta">
+              <div class="name">WriteKafka</div>
+              <div class="desc">写 Kafka topic</div>
+            </div>
+            <span class="engine">llm</span>
+          </div>
+          <div class="tpl-item" draggable="true" data-tpl="DeadLetter" data-color="#ef4444">
+            <div class="ic" style="background:#ef4444">DL</div>
+            <div class="meta">
+              <div class="name">DeadLetter</div>
+              <div class="desc">进死信队列</div>
+            </div>
+            <span class="engine">py</span>
+          </div>
+          <div class="tpl-item" draggable="true" data-tpl="Retry" data-color="#f59e0b">
+            <div class="ic" style="background:#f59e0b">RT</div>
+            <div class="meta">
+              <div class="name">Retry</div>
+              <div class="desc">退避重试</div>
+            </div>
+            <span class="engine">llm</span>
+          </div>
+        </div>
+      </div>
+      <div class="category">
+        <div class="cat-title">▼ 汇聚 <span class="count">2</span></div>
+        <div class="items">
+          <div class="tpl-item" draggable="true" data-tpl="Merge" data-color="#06b6d4">
+            <div class="ic" style="background:#06b6d4">MG</div>
+            <div class="meta">
+              <div class="name">Merge</div>
+              <div class="desc">多入度合并</div>
+            </div>
+            <span class="engine">py</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Canvas -->
+  <div class="canvas-wrap">
+    <div class="canvas-toolbar">
+      <button class="tool-btn active" title="选择"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l7 18 2-8 8-2z"/></svg></button>
+      <button class="tool-btn" title="框选"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg></button>
+      <button class="tool-btn" title="拖动画布"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 11V6a2 2 0 0 0-2-2h0a2 2 0 0 0-2 2"/><path d="M14 10V4a2 2 0 0 0-2-2h0a2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2h0a2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg></button>
+      <div class="sep"></div>
+      <button class="tool-btn" title="新建 Bundle"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 12h8M12 8v8"/></svg></button>
+      <button class="tool-btn" title="复制"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+      <button class="tool-btn" title="粘贴"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg></button>
+      <div class="sep"></div>
+      <button class="tool-btn" title="校验 (DesignValidator)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></button>
+    </div>
+
+    <div class="run-fab">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:4px;color:var(--text-muted)"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      <select>
+        <option>PHASE1_ONLY · 只跑设计验证</option>
+        <option>UP_TO_PHASE2 · 设计 + 代码生成</option>
+        <option>FULL · 完整三阶段</option>
+      </select>
+      <div class="divider-v"></div>
+      <button class="btn primary sm" onclick="location.href='run-detail.html'">触发 Run</button>
+    </div>
+
+    <div id="x6-canvas"></div>
+
+    <div class="minimap">
+      <div class="mini-header">缩略图 <span class="mono dim">100%</span></div>
+      <div class="mini-body">
+        <svg viewBox="0 0 200 118" style="width:100%;height:100%">
+          <rect x="20" y="14" width="70" height="46" rx="4" fill="#eef2ff" stroke="#8b5cf6" stroke-dasharray="3 2" stroke-width=".6"/>
+          <rect x="110" y="14" width="66" height="46" rx="4" fill="#f0fdf4" stroke="#10b981" stroke-dasharray="3 2" stroke-width=".6"/>
+          <rect x="28" y="22" width="22" height="10" fill="#6366f1"/>
+          <rect x="58" y="22" width="22" height="10" fill="#6366f1"/>
+          <rect x="28" y="38" width="22" height="10" fill="#10b981"/>
+          <rect x="118" y="22" width="22" height="10" fill="#10b981"/>
+          <rect x="146" y="22" width="22" height="10" fill="#8b5cf6"/>
+          <rect x="40" y="78" width="40" height="12" fill="#f59e0b"/>
+          <rect x="100" y="78" width="40" height="12" fill="#ef4444"/>
+          <line x1="90" y1="26" x2="110" y2="26" stroke="#6366f1" stroke-width=".8"/>
+          <line x1="167" y1="32" x2="120" y2="78" stroke="#6366f1" stroke-width=".8" stroke-dasharray="2 2"/>
+          <rect class="mini-viewport" x="20" y="14" width="120" height="72"/>
+        </svg>
+      </div>
+    </div>
+
+    <div class="canvas-bottombar">
+      <button class="zoom-btn" title="缩小"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+      <span class="mono" id="zoom-label">100%</span>
+      <button class="zoom-btn" title="放大"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+      <button class="zoom-btn" title="适应画布"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
+      <span class="divider-v" style="width:1px;height:16px;background:var(--border);margin:0 4px"></span>
+      <span class="muted">7 nodes · 2 bundles · 8 edges</span>
+    </div>
+  </div>
+
+  <!-- Right: Properties -->
+  <aside class="right-panel">
+    <div class="tabs">
+      <div class="tab active">属性</div>
+      <div class="tab">字段</div>
+      <div class="tab">Trace</div>
+      <div class="tab">图层</div>
+    </div>
+    <div class="prop-body" id="prop-body">
+      <div class="selected-card">
+        <div class="hdr">
+          <div class="ic" style="background:#10b981">HC</div>
+          <div>
+            <div class="title">HashCheck</div>
+            <div class="subtitle">n_2d91ab03 · 实例</div>
+          </div>
+        </div>
+        <div class="row"><span class="k">节点模板</span><span class="v">tpl_hashcheck@v3</span></div>
+        <div class="row"><span class="k">归属 Bundle</span><span class="v">bnd_verify</span></div>
+        <div class="row"><span class="k">engine</span><span class="tag success" style="font-size:10px">pure_python</span></div>
+        <div class="row"><span class="k">入度 / 出度</span><span class="v">1 / 2</span></div>
+      </div>
+
+      <div class="panel-title">字段(来自元模板)</div>
+      <div class="field">
+        <div class="flabel">instance_name <span class="t">string</span></div>
+        <input class="input" value="verify_hash"/>
+      </div>
+      <div class="field">
+        <div class="flabel">algorithm <span class="t">enum</span></div>
+        <select class="select"><option>sha256</option><option>md5</option><option>blake3</option></select>
+      </div>
+      <div class="field">
+        <div class="flabel">expected_hash_field <span class="t">string</span></div>
+        <input class="input" value="input.header.hash"/>
+        <div class="hint">从 input JSON 里取这个字段的值做比对</div>
+      </div>
+
+      <div class="panel-title">出边语义</div>
+      <div class="field">
+        <div class="flabel">on_match <span class="t" style="color:var(--success)">NodeInstance*</span></div>
+        <div style="font-size:12px;color:var(--text)">→ <span class="mono">n_9f01cc28</span> SchemaValidate</div>
+      </div>
+      <div class="field">
+        <div class="flabel">on_mismatch <span class="t" style="color:var(--danger)">NodeInstance*</span></div>
+        <div style="font-size:12px;color:var(--text)">→ <span class="mono">n_7a01ef11</span> DeadLetter <span class="muted">(跨 bundle)</span></div>
+      </div>
+
+      <div class="panel-title">Bundle 成员</div>
+      <div class="bundle-members">
+        <div class="mbr"><div class="status-dot success"></div>ParseHeader <span class="pill">n_c1…</span></div>
+        <div class="mbr" style="background:var(--primary-soft)"><div class="status-dot success"></div>HashCheck <span class="pill">n_2d…</span></div>
+        <div class="mbr"><div class="status-dot success"></div>SchemaValidate <span class="pill">n_9f…</span></div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<script>
+  // ============================================================
+  // X6 画布初始化
+  // ============================================================
+  const { Graph, Shape } = window.X6;
+
+  // --- 自定义节点样式:NodeInstance
+  Graph.registerNode('cascade-node', {
+    inherit: 'rect',
+    width: 140,
+    height: 46,
+    attrs: {
+      body: {
+        fill: '#fff',
+        stroke: '#cbd5e1',
+        strokeWidth: 1,
+        rx: 8, ry: 8,
+        filter: 'drop-shadow(0 2px 6px rgba(15,23,42,0.06))',
+      },
+      icon: {
+        x: 10, y: 11, width: 24, height: 24,
+        refRx: 6, refRy: 6,
+      },
+      iconText: {
+        x: 22, y: 27,
+        fontSize: 11,
+        fontWeight: 700,
+        fill: '#fff',
+        textAnchor: 'middle',
+      },
+      label: {
+        x: 44, y: 20,
+        fontSize: 13,
+        fill: '#0f172a',
+        fontWeight: 500,
+      },
+      sub: {
+        x: 44, y: 36,
+        fontSize: 10,
+        fill: '#94a3b8',
+        fontFamily: 'ui-monospace, monospace',
+      },
+    },
+    markup: [
+      { tagName: 'rect', selector: 'body' },
+      { tagName: 'rect', selector: 'icon' },
+      { tagName: 'text', selector: 'iconText' },
+      { tagName: 'text', selector: 'label' },
+      { tagName: 'text', selector: 'sub' },
+    ],
+    ports: {
+      groups: {
+        in: {
+          position: 'left',
+          attrs: {
+            circle: {
+              r: 4, magnet: true,
+              stroke: '#6366f1', strokeWidth: 1.5, fill: '#fff',
+            },
+          },
+        },
+        out: {
+          position: 'right',
+          attrs: {
+            circle: {
+              r: 4, magnet: true,
+              stroke: '#6366f1', strokeWidth: 1.5, fill: '#fff',
+            },
+          },
+        },
+      },
+    },
+  });
+
+  // --- 自定义 Bundle:分组矩形
+  Graph.registerNode('cascade-bundle', {
+    inherit: 'rect',
+    attrs: {
+      body: {
+        fill: 'rgba(139,92,246,0.04)',
+        stroke: '#8b5cf6',
+        strokeWidth: 1.2,
+        strokeDasharray: '6 4',
+        rx: 12, ry: 12,
+      },
+      label: {
+        refX: 16, refY: 14,
+        fontSize: 12,
+        fontWeight: 600,
+        fill: '#6d28d9',
+        textAnchor: 'start',
+      },
+      tag: {
+        refX: 16, refY: 32,
+        fontSize: 10,
+        fill: '#a78bfa',
+        textAnchor: 'start',
+        fontFamily: 'ui-monospace, monospace',
+      },
+    },
+    markup: [
+      { tagName: 'rect', selector: 'body' },
+      { tagName: 'text', selector: 'label' },
+      { tagName: 'text', selector: 'tag' },
+    ],
+  });
+
+  // --- 自定义边
+  Graph.registerEdge('cascade-edge', {
+    inherit: 'edge',
+    attrs: {
+      line: {
+        stroke: '#94a3b8',
+        strokeWidth: 1.6,
+        targetMarker: { name: 'block', width: 8, height: 8 },
+      },
+    },
+    router: { name: 'metro', args: { padding: 20 } },
+    connector: { name: 'rounded', args: { radius: 8 } },
+  });
+
+  // --- 交叉 bundle 的边用虚线
+  Graph.registerEdge('cross-bundle-edge', {
+    inherit: 'edge',
+    attrs: {
+      line: {
+        stroke: '#ef4444',
+        strokeWidth: 1.4,
+        strokeDasharray: '5 4',
+        targetMarker: { name: 'block', width: 8, height: 8 },
+      },
+    },
+    router: { name: 'metro', args: { padding: 30 } },
+    connector: { name: 'rounded', args: { radius: 8 } },
+  });
+
+  const graph = new Graph({
+    container: document.getElementById('x6-canvas'),
+    background: { color: 'transparent' },
+    grid: false,
+    panning: { enabled: true, modifiers: 'space' },
+    mousewheel: { enabled: true, modifiers: 'ctrl', factor: 1.1, minScale: 0.4, maxScale: 2 },
+    connecting: {
+      router: 'metro',
+      connector: { name: 'rounded', args: { radius: 8 } },
+      allowBlank: false, allowMulti: false, allowLoop: false,
+      snap: { radius: 20 },
+      createEdge() {
+        return graph.createEdge({ shape: 'cascade-edge' });
+      },
+    },
+    interacting: { nodeMovable: true, edgeMovable: true, magnetConnectable: true },
+    highlighting: {
+      magnetAvailable: {
+        name: 'stroke',
+        args: { attrs: { fill: '#fff', stroke: '#6366f1', strokeWidth: 3 } },
+      },
+    },
+    embedding: {
+      enabled: true,
+      findParent({ node }) {
+        const bbox = node.getBBox();
+        return this.getNodes().filter((n) => {
+          const data = n.getData() || {};
+          if (data.kind === 'bundle') {
+            return n.getBBox().containsRect(bbox);
+          }
+          return false;
+        });
+      },
+    },
+  });
+
+  // --- 预填一个示例森林
+  // Bundle A: verify pipeline
+  const bndA = graph.addNode({
+    shape: 'cascade-bundle',
+    x: 60, y: 80, width: 520, height: 240,
+    zIndex: 1,
+    data: { kind: 'bundle', id: 'bnd_verify' },
+    attrs: {
+      label: { text: 'verify · 报文校验 Bundle' },
+      tag: { text: 'bnd_verify · class VerifyPipeline' },
+    },
+  });
+
+  // Bundle B: dispatch
+  const bndB = graph.addNode({
+    shape: 'cascade-bundle',
+    x: 650, y: 80, width: 420, height: 240,
+    zIndex: 1,
+    data: { kind: 'bundle', id: 'bnd_dispatch' },
+    attrs: {
+      label: { text: 'dispatch · 路由分发 Bundle' },
+      tag: { text: 'bnd_dispatch · function dispatch()' },
+    },
+  });
+
+  function makeNode(id, name, sub, color, initial, x, y, parent) {
+    const n = graph.addNode({
+      shape: 'cascade-node',
+      x, y,
+      zIndex: 10,
+      data: { kind: 'node', id, templateName: name },
+      attrs: {
+        icon: { fill: color },
+        iconText: { text: initial },
+        label: { text: name },
+        sub: { text: sub },
+      },
+      ports: {
+        items: [
+          { id: 'in',  group: 'in'  },
+          { id: 'out', group: 'out' },
+        ],
+      },
+    });
+    if (parent) parent.addChild(n);
+    return n;
+  }
+
+  // Nodes inside bndA
+  const n1 = makeNode('n_aa11bb22', 'ParseHeader',   'n_aa11', '#6366f1', 'PH',  90, 150, bndA);
+  const n2 = makeNode('n_2d91ab03', 'HashCheck',     'n_2d91', '#10b981', 'HC', 280, 150, bndA);
+  const n3 = makeNode('n_9f01cc28', 'SchemaValidate','n_9f01', '#10b981', 'SV', 440, 240, bndA);
+  const n5 = makeNode('n_6bc1e42f', 'WriteKafka',    'n_6bc1', '#f59e0b', 'WK', 730, 150, bndB);
+
+  // Free node (孤儿)
+  const n_free = makeNode('n_freed001', 'Merge',      'n_free', '#06b6d4', 'MG', 420, 380);
+
+  // Floating node in bndB
+  const n6 = makeNode('n_7c22aa11', 'BranchByField','n_7c22', '#8b5cf6', 'BF', 900, 150, bndB);
+
+  // Free node (dead-letter, 跨 bundle 边终点)
+  const n_dl = makeNode('n_7a01ef11', 'DeadLetter','n_7a01', '#ef4444', 'DL', 760, 390);
+
+  // --- edges
+  function edge(s, t, opts = {}) {
+    return graph.addEdge({
+      shape: opts.cross ? 'cross-bundle-edge' : 'cascade-edge',
+      source: { cell: s, port: 'out' },
+      target: { cell: t, port: 'in' },
+      labels: opts.label ? [{
+        attrs: { label: { text: opts.label, fontSize: 10, fill: opts.cross ? '#ef4444' : '#64748b' }, body: { fill: '#fff', stroke: '#e5e7eb', rx: 4, ry: 4 } },
+        position: 0.5,
+      }] : [],
+    });
+  }
+  edge(n1, n2, { label: 'parsed' });
+  edge(n2, n3, { label: 'on_match' });
+  edge(n2, n_dl, { label: 'on_mismatch', cross: true });
+  edge(n3, n6, { label: 'ok' });
+  edge(n6, n5, { label: 'to_kafka' });
+  edge(n3, n_free, { label: 'audit', cross: true });
+  edge(n_free, n5, { label: 'merged', cross: true });
+
+  // --- selection styles
+  graph.on('node:selected', ({ cell }) => {
+    cell.attr('body/stroke', '#6366f1');
+    cell.attr('body/strokeWidth', 2);
+  });
+  graph.on('node:unselected', ({ cell }) => {
+    const data = cell.getData() || {};
+    if (data.kind === 'bundle') {
+      cell.attr('body/stroke', '#8b5cf6');
+      cell.attr('body/strokeWidth', 1.2);
+    } else {
+      cell.attr('body/stroke', '#cbd5e1');
+      cell.attr('body/strokeWidth', 1);
+    }
+  });
+
+  graph.on('blank:click', () => graph.cleanSelection());
+  graph.on('node:click', ({ cell }) => {
+    graph.cleanSelection();
+    graph.select(cell);
+  });
+
+  // --- drag from template panel
+  document.querySelectorAll('.tpl-item').forEach((el) => {
+    el.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/tpl', el.dataset.tpl);
+      e.dataTransfer.setData('text/color', el.dataset.color);
+    });
+  });
+
+  const canvasEl = document.getElementById('x6-canvas');
+  canvasEl.addEventListener('dragover', (e) => e.preventDefault());
+  canvasEl.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const tpl = e.dataTransfer.getData('text/tpl');
+    const color = e.dataTransfer.getData('text/color') || '#6366f1';
+    if (!tpl) return;
+    const rect = canvasEl.getBoundingClientRect();
+    const point = graph.clientToLocal({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    const id = 'n_' + Math.random().toString(36).slice(2, 10);
+    makeNode(id, tpl, id.slice(0, 7), color, tpl.slice(0, 2).toUpperCase(), point.x, point.y);
+  });
+
+  // --- Fit on load
+  setTimeout(() => graph.zoomToFit({ padding: 30, maxScale: 1 }), 80);
+
+  // --- zoom label
+  graph.on('scale', ({ sx }) => {
+    document.getElementById('zoom-label').textContent = Math.round(sx * 100) + '%';
+  });
+
+  // --- tabs on right panel
+  document.querySelectorAll('.right-panel .tab').forEach((t) => {
+    t.addEventListener('click', () => {
+      document.querySelectorAll('.right-panel .tab').forEach((x) => x.classList.remove('active'));
+      t.classList.add('active');
+    });
+  });
+  document.querySelectorAll('.left-panel .tab').forEach((t) => {
+    t.addEventListener('click', () => {
+      document.querySelectorAll('.left-panel .tab').forEach((x) => x.classList.remove('active'));
+      t.classList.add('active');
+    });
+  });
+</script>
+</body>
+</html>

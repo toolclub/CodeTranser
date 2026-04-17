@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>节点模板编辑器 · 级跳</title>
+<link rel="stylesheet" href="../assets/common.css">
+<style>
+  .app {
+    grid-template-columns: 56px 1fr 420px;
+    grid-template-areas:
+      "topbar topbar topbar"
+      "sidebar main preview";
+  }
+  .preview { grid-area: preview; background: #0f172a; color: #e2e8f0; display: flex; flex-direction: column; overflow: hidden; }
+  .preview .ph {
+    padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,.08);
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 12px;
+  }
+  .preview .pbody { flex: 1; overflow: auto; padding: 14px; font-family: var(--mono); font-size: 12px; line-height: 1.6; }
+  .preview .k { color: #c084fc; }
+  .preview .s { color: #86efac; }
+  .preview .n { color: #fbbf24; }
+  .preview .c { color: #64748b; font-style: italic; }
+  .preview .p { color: #94a3b8; }
+
+  .form-wrap { padding: 24px 32px 48px; max-width: 840px; }
+  .page-head { margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; }
+  .page-head h2 { margin: 0; font-size: 20px; }
+  .page-head .sub { color: var(--text-muted); font-size: 13px; }
+
+  .tabs-bar {
+    display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin-bottom: 20px;
+  }
+  .tabs-bar .tab {
+    padding: 8px 14px; font-size: 13px; color: var(--text-muted);
+    border-bottom: 2px solid transparent; cursor: pointer;
+  }
+  .tabs-bar .tab.active { color: var(--primary); border-color: var(--primary); font-weight: 500; }
+  .tabs-bar .tab .tag { margin-left: 6px; }
+
+  .section {
+    background: #fff; border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px 20px; margin-bottom: 16px;
+  }
+  .section > h3 {
+    margin: 0 0 12px; font-size: 14px; font-weight: 600;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+  /* Description 字符串数组编辑器 */
+  .desc-rows { display: flex; flex-direction: column; gap: 6px; }
+  .desc-row { display: flex; gap: 8px; align-items: flex-start; }
+  .desc-row .lineno { color: var(--text-dim); font-family: var(--mono); font-size: 11px; padding-top: 8px; width: 24px; text-align: right; }
+  .desc-row textarea { flex: 1; min-height: 28px; max-height: 120px; padding: 6px 10px; }
+  .desc-row .del { opacity: .4; }
+  .desc-row:hover .del { opacity: 1; }
+
+  /* Schema 字段表 */
+  .schema-table {
+    width: 100%; border-collapse: separate; border-spacing: 0;
+    border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden;
+  }
+  .schema-table th { background: var(--surface-2); font-size: 11px; font-weight: 500; color: var(--text-muted); text-transform: uppercase; letter-spacing: .3px; padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); }
+  .schema-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 12px; vertical-align: middle; }
+  .schema-table tr:last-child td { border-bottom: none; }
+  .schema-table .t-pill {
+    padding: 2px 8px; border-radius: 4px; font-family: var(--mono); font-size: 11px;
+    background: var(--surface-3); color: var(--primary);
+  }
+  .schema-table .add-row td { background: var(--surface-2); padding: 6px 10px; }
+
+  .edge-item {
+    display: grid; grid-template-columns: auto 1fr auto auto; gap: 10px; align-items: center;
+    padding: 10px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    margin-bottom: 8px;
+  }
+  .edge-item .hnd {
+    width: 24px; height: 24px; border-radius: 4px;
+    background: var(--primary-soft); color: var(--primary);
+    display: grid; place-items: center; font-size: 10px; font-family: var(--mono);
+    font-weight: 700;
+  }
+  .edge-item.mismatch .hnd { background: var(--danger-soft); color: var(--danger); }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="logo"><span class="logo-mark">级</span><span>级跳</span></div>
+    <div class="breadcrumb">
+      <a href="template-library.html">节点模板库</a><span class="sep">/</span>
+      <strong>HashCheck</strong>
+      <span class="tag outline mono" style="margin-left:8px">tpl_hashcheck</span>
+      <span class="tag violet">v3 · 已发布</span>
+      <span class="tag outline">新草稿 v4</span>
+    </div>
+    <div class="spacer"></div>
+    <div class="actions">
+      <button class="btn sm">放弃草稿</button>
+      <button class="btn sm">保存草稿</button>
+      <button class="btn primary sm">发布为 v4</button>
+    </div>
+  </div>
+
+  <nav class="sidebar-nav">
+    <a class="nav-item" href="graph-list.html"><svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span class="tip">图列表</span></a>
+    <a class="nav-item active" href="template-library.html"><svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 7L12 3L4 7L12 11L20 7Z"/><path d="M4 12L12 16L20 12"/></svg><span class="tip">模板库</span></a>
+  </nav>
+
+  <main class="main">
+    <div class="form-wrap">
+      <div class="page-head">
+        <div>
+          <h2>编辑节点模板</h2>
+          <div class="sub">结构由元模板 <span class="mono">meta_default@v1</span> 决定,字段会透传到画布的"属性面板"。</div>
+        </div>
+      </div>
+
+      <div class="tabs-bar">
+        <div class="tab active">基础信息</div>
+        <div class="tab">输入 Schema <span class="tag outline">3</span></div>
+        <div class="tab">输出 Schema <span class="tag outline">2</span></div>
+        <div class="tab">出边语义 <span class="tag outline">2</span></div>
+        <div class="tab">解释器 Prompt</div>
+        <div class="tab">测试场景 <span class="tag success">5/5</span></div>
+        <div class="tab">版本历史</div>
+      </div>
+
+      <div class="section">
+        <h3>标识 <span class="tag outline" style="font-weight:400">meta 必填</span></h3>
+        <div class="two-col">
+          <div class="form-row">
+            <label>模板名 <span class="req">*</span></label>
+            <input class="input" value="HashCheck"/>
+            <div class="hint">英文 CamelCase,全局唯一 per owner</div>
+          </div>
+          <div class="form-row">
+            <label>显示名</label>
+            <input class="input" value="Hash 校验"/>
+          </div>
+          <div class="form-row">
+            <label>分类</label>
+            <select class="select"><option>校验</option><option>表操作</option><option>分流</option><option>动作</option><option>汇聚</option></select>
+          </div>
+          <div class="form-row">
+            <label>可见性</label>
+            <select class="select"><option>全局 (admin only)</option><option>私有 · 仅自己</option><option>私有 · 团队共享</option></select>
+          </div>
+          <div class="form-row">
+            <label>Engine</label>
+            <select class="select"><option>pure_python · 自实现模拟器</option><option>llm · LLM 代跑</option></select>
+            <div class="hint">设计人员创建强制为 <span class="mono">llm</span>;admin 可选 <span class="mono">pure_python</span></div>
+          </div>
+          <div class="form-row">
+            <label>图标色</label>
+            <div class="flex gap-4">
+              <div style="width:26px;height:26px;border-radius:6px;background:#6366f1;border:2px solid #fff;box-shadow:0 0 0 2px #e5e7eb"></div>
+              <div style="width:26px;height:26px;border-radius:6px;background:#10b981;border:2px solid #fff;box-shadow:0 0 0 2px var(--primary)"></div>
+              <div style="width:26px;height:26px;border-radius:6px;background:#8b5cf6"></div>
+              <div style="width:26px;height:26px;border-radius:6px;background:#f59e0b"></div>
+              <div style="width:26px;height:26px;border-radius:6px;background:#ef4444"></div>
+              <div style="width:26px;height:26px;border-radius:6px;background:#06b6d4"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h3>描述(string[]) <span class="tag">后端 "\n".join 传给 LLM / 解释器</span></h3>
+        <div class="desc-rows">
+          <div class="desc-row"><div class="lineno">01</div><textarea class="textarea" style="min-height:28px">用于校验报文 header 里 hash 字段与载荷重新计算的摘要是否一致。</textarea><button class="btn ghost sm del">✕</button></div>
+          <div class="desc-row"><div class="lineno">02</div><textarea class="textarea" style="min-height:28px">支持 sha256 / md5 / blake3 三种算法,由字段 algorithm 控制。</textarea><button class="btn ghost sm del">✕</button></div>
+          <div class="desc-row"><div class="lineno">03</div><textarea class="textarea" style="min-height:28px">若匹配走 on_match;否则走 on_mismatch,不会抛异常。</textarea><button class="btn ghost sm del">✕</button></div>
+          <div class="desc-row"><div class="lineno">04</div><textarea class="textarea" style="min-height:28px" placeholder="新增一行..."></textarea><button class="btn ghost sm del">✕</button></div>
+        </div>
+        <button class="btn sm" style="margin-top:8px">+ 新增行</button>
+      </div>
+
+      <div class="section">
+        <h3>input_schema <span class="tag">JSON Schema,前端表单渲染 + AI 入参校验</span></h3>
+        <table class="schema-table">
+          <thead><tr><th>字段名</th><th>类型</th><th>必填</th><th>默认</th><th>说明</th><th style="width:40px"></th></tr></thead>
+          <tbody>
+            <tr>
+              <td><input class="input" value="payload" style="padding:4px 8px"/></td>
+              <td><span class="t-pill">object</span></td>
+              <td><input type="checkbox" checked></td>
+              <td><span class="mono dim">—</span></td>
+              <td class="muted">待校验的报文主体</td>
+              <td><button class="btn ghost sm">✕</button></td>
+            </tr>
+            <tr>
+              <td><input class="input" value="header.hash" style="padding:4px 8px"/></td>
+              <td><span class="t-pill">string</span></td>
+              <td><input type="checkbox" checked></td>
+              <td><span class="mono dim">—</span></td>
+              <td class="muted">预期 hash,十六进制</td>
+              <td><button class="btn ghost sm">✕</button></td>
+            </tr>
+            <tr>
+              <td><input class="input" value="algorithm" style="padding:4px 8px"/></td>
+              <td><span class="t-pill">enum</span></td>
+              <td><input type="checkbox"></td>
+              <td class="mono">"sha256"</td>
+              <td class="muted">摘要算法</td>
+              <td><button class="btn ghost sm">✕</button></td>
+            </tr>
+            <tr class="add-row"><td colspan="6"><button class="btn sm">+ 新增字段</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <h3>output_schema</h3>
+        <table class="schema-table">
+          <thead><tr><th>字段名</th><th>类型</th><th>说明</th><th></th></tr></thead>
+          <tbody>
+            <tr><td class="mono">match</td><td><span class="t-pill">bool</span></td><td class="muted">是否匹配</td><td><button class="btn ghost sm">✕</button></td></tr>
+            <tr><td class="mono">computed_hash</td><td><span class="t-pill">string</span></td><td class="muted">实际计算出的 hash,便于排查</td><td><button class="btn ghost sm">✕</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <h3>出边语义 edge_semantics <span class="tag">告诉代码生成器每条出边对应实例的哪个字段</span></h3>
+        <div class="edge-item">
+          <div class="hnd">✓</div>
+          <div>
+            <div style="font-weight:500">on_match</div>
+            <div class="muted" style="font-size:11px">对应 C++ 实例字段:<span class="mono">Node* next_on_match</span></div>
+          </div>
+          <span class="tag success">0..1</span>
+          <button class="btn ghost sm">编辑</button>
+        </div>
+        <div class="edge-item mismatch">
+          <div class="hnd">✕</div>
+          <div>
+            <div style="font-weight:500">on_mismatch</div>
+            <div class="muted" style="font-size:11px">对应 C++ 实例字段:<span class="mono">Node* next_on_mismatch</span></div>
+          </div>
+          <span class="tag danger">0..1</span>
+          <button class="btn ghost sm">编辑</button>
+        </div>
+        <button class="btn sm">+ 新增出边</button>
+      </div>
+
+      <div class="section">
+        <h3>解释器 Prompt <span class="tag violet">仅 engine=llm 时生效</span></h3>
+        <textarea class="textarea" style="min-height:140px">你是一个 HashCheck 解释器。
+给定 input JSON,按 algorithm 字段重新计算 payload 的 hash,与 header.hash 对比。
+输出:{ match: bool, computed_hash: string }</textarea>
+        <div class="hint">变量引用:<span class="mono">{{fields}} {{input}} {{ctx.table_data}}</span>。Prompt 会自动附加 output_schema 做 JSON 结构约束。</div>
+      </div>
+    </div>
+  </main>
+
+  <aside class="preview">
+    <div class="ph">
+      <span>实时预览 · 最终 JSON 快照</span>
+      <span class="muted mono">POST /api/node-templates</span>
+    </div>
+    <pre class="pbody"><span class="c">// 发布后会形成 tpv_xxx 版本快照</span>
+<span class="p">{</span>
+  <span class="k">"name"</span>: <span class="s">"HashCheck"</span>,
+  <span class="k">"display_name"</span>: <span class="s">"Hash 校验"</span>,
+  <span class="k">"category"</span>: <span class="s">"校验"</span>,
+  <span class="k">"visibility"</span>: <span class="s">"global"</span>,
+  <span class="k">"engine"</span>: <span class="s">"pure_python"</span>,
+  <span class="k">"description"</span>: <span class="p">[</span>
+    <span class="s">"用于校验报文 header 里 hash 字段..."</span>,
+    <span class="s">"支持 sha256 / md5 / blake3 三种算法..."</span>,
+    <span class="s">"若匹配走 on_match;否则走 on_mismatch..."</span>
+  <span class="p">]</span>,
+  <span class="k">"input_schema"</span>: <span class="p">{</span>
+    <span class="k">"type"</span>: <span class="s">"object"</span>,
+    <span class="k">"required"</span>: <span class="p">[</span><span class="s">"payload"</span>, <span class="s">"header.hash"</span><span class="p">]</span>,
+    <span class="k">"properties"</span>: <span class="p">{</span>
+      <span class="k">"payload"</span>: <span class="p">{</span> <span class="k">"type"</span>: <span class="s">"object"</span> <span class="p">}</span>,
+      <span class="k">"header.hash"</span>: <span class="p">{</span> <span class="k">"type"</span>: <span class="s">"string"</span> <span class="p">}</span>,
+      <span class="k">"algorithm"</span>: <span class="p">{</span>
+        <span class="k">"type"</span>: <span class="s">"string"</span>,
+        <span class="k">"enum"</span>: <span class="p">[</span><span class="s">"sha256"</span>,<span class="s">"md5"</span>,<span class="s">"blake3"</span><span class="p">]</span>,
+        <span class="k">"default"</span>: <span class="s">"sha256"</span>
+      <span class="p">}</span>
+    <span class="p">}</span>
+  <span class="p">}</span>,
+  <span class="k">"output_schema"</span>: <span class="p">{</span>
+    <span class="k">"type"</span>: <span class="s">"object"</span>,
+    <span class="k">"properties"</span>: <span class="p">{</span>
+      <span class="k">"match"</span>: <span class="p">{</span> <span class="k">"type"</span>: <span class="s">"boolean"</span> <span class="p">}</span>,
+      <span class="k">"computed_hash"</span>: <span class="p">{</span> <span class="k">"type"</span>: <span class="s">"string"</span> <span class="p">}</span>
+    <span class="p">}</span>
+  <span class="p">}</span>,
+  <span class="k">"edge_semantics"</span>: <span class="p">[</span>
+    <span class="p">{</span> <span class="k">"name"</span>: <span class="s">"on_match"</span>,    <span class="k">"cpp_field"</span>: <span class="s">"next_on_match"</span>,    <span class="k">"multiplicity"</span>: <span class="s">"0..1"</span> <span class="p">}</span>,
+    <span class="p">{</span> <span class="k">"name"</span>: <span class="s">"on_mismatch"</span>, <span class="k">"cpp_field"</span>: <span class="s">"next_on_mismatch"</span>, <span class="k">"multiplicity"</span>: <span class="s">"0..1"</span> <span class="p">}</span>
+  <span class="p">]</span>,
+  <span class="k">"prompt_template"</span>: <span class="s">"你是一个 HashCheck 解释器..."</span>,
+  <span class="k">"meta_template_id"</span>: <span class="s">"meta_default@v1"</span>
+<span class="p">}</span></pre>
+  </aside>
+</div>
+<script>
+  document.querySelectorAll('.tabs-bar .tab').forEach((t) => {
+    t.addEventListener('click', () => {
+      document.querySelectorAll('.tabs-bar .tab').forEach(x => x.classList.remove('active'));
+      t.classList.add('active');
+    });
+  });
+</script>
+</body>
+</html>

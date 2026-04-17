@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>运行记录 · 级跳</title>
+<link rel="stylesheet" href="../assets/common.css">
+<style>
+  .page { padding: 24px 32px 48px; max-width: 1400px; margin: 0 auto; }
+  .page h2 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+  .page .sub { color: var(--text-muted); font-size: 13px; margin-bottom: 20px; }
+  .toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; }
+  .chip { padding: 4px 10px; border-radius: 999px; font-size: 12px; background: #fff; border: 1px solid var(--border); color: var(--text-muted); cursor: pointer; }
+  .chip.active { background: var(--primary-soft); color: var(--primary); border-color: var(--primary); }
+  .runs { width: 100%; border-collapse: separate; border-spacing: 0; background: #fff; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .runs th, .runs td { padding: 10px 14px; text-align: left; font-size: 13px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  .runs th { background: var(--surface-2); color: var(--text-muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .3px; }
+  .runs tr:hover td { background: var(--surface-2); }
+  .runs tr:last-child td { border-bottom: none; }
+
+  .progress {
+    display: flex; gap: 2px; width: 180px; height: 6px; border-radius: 3px; overflow: hidden;
+    background: var(--surface-3);
+  }
+  .progress .seg { flex: 1; background: var(--text-dim); }
+  .progress .seg.ok { background: var(--success); }
+  .progress .seg.fail { background: var(--danger); }
+  .progress .seg.running { background: var(--info); animation: pulse 1.6s infinite; }
+
+  .stat-strip {
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 20px;
+  }
+  .s {
+    background: #fff; border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 12px 14px;
+  }
+  .s .l { color: var(--text-muted); font-size: 12px; }
+  .s .v { font-size: 22px; font-weight: 600; margin-top: 2px; display: flex; align-items: center; gap: 6px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="logo"><span class="logo-mark">级</span><span>级跳</span></div>
+    <div class="breadcrumb"><strong>运行记录</strong></div>
+    <div class="spacer"></div>
+    <div class="actions"><div class="user"><div class="avatar">YZ</div>杨震</div></div>
+  </div>
+  <nav class="sidebar-nav">
+    <a class="nav-item" href="graph-list.html"><svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/></svg><span class="tip">图列表</span></a>
+    <a class="nav-item" href="template-library.html"><svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 7L12 3L4 7L12 11L20 7Z"/><path d="M4 12L12 16L20 12"/></svg><span class="tip">模板库</span></a>
+    <a class="nav-item active"><svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg><span class="tip">运行</span></a>
+  </nav>
+  <main class="main">
+    <div class="page">
+      <h2>运行记录</h2>
+      <div class="sub">WorkflowRun 列表,按图、状态、Pipeline variant 筛选。WS 实时更新进行中的 Run 进度。</div>
+
+      <div class="stat-strip">
+        <div class="s"><div class="l">今日 Run</div><div class="v">38</div></div>
+        <div class="s"><div class="l">进行中</div><div class="v"><span class="status-dot running"></span>4</div></div>
+        <div class="s"><div class="l">Phase1 通过率</div><div class="v">86%</div></div>
+        <div class="s"><div class="l">Phase3 通过率</div><div class="v">72%</div></div>
+        <div class="s"><div class="l">平均耗时 (FULL)</div><div class="v">4m 32s</div></div>
+      </div>
+
+      <div class="toolbar">
+        <div style="flex:1;max-width:340px;position:relative"><input class="input" placeholder="按 run_id / 图名搜索..."/></div>
+        <div style="display:flex;gap:6px">
+          <span class="chip active">全部</span>
+          <span class="chip">进行中</span>
+          <span class="chip">成功</span>
+          <span class="chip">失败</span>
+        </div>
+        <div style="display:flex;gap:6px">
+          <span class="chip">PHASE1_ONLY</span>
+          <span class="chip active">UP_TO_PHASE2</span>
+          <span class="chip active">FULL</span>
+        </div>
+        <div class="spacer" style="flex:1"></div>
+        <button class="btn sm">自定义时间段</button>
+      </div>
+
+      <table class="runs">
+        <thead>
+          <tr>
+            <th style="width:140px">Run ID</th>
+            <th>图</th>
+            <th>版本</th>
+            <th>Pipeline</th>
+            <th style="width:200px">进度</th>
+            <th>状态</th>
+            <th>耗时</th>
+            <th>触发人</th>
+            <th>时间</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr onclick="location.href='run-detail.html'" style="cursor:pointer">
+            <td class="mono">r_91a7c22d</td>
+            <td>报文处理主流水线 · inbound</td>
+            <td><span class="tag outline mono">v17</span></td>
+            <td><span class="tag primary">FULL</span></td>
+            <td>
+              <div class="progress">
+                <div class="seg ok"></div><div class="seg ok"></div><div class="seg ok"></div>
+              </div>
+              <div class="muted mono" style="font-size:10px;margin-top:4px">5/5 scenarios</div>
+            </td>
+            <td><span class="tag success"><span class="dot"></span>通过</span></td>
+            <td class="mono">4m 22s</td>
+            <td>杨震</td>
+            <td class="muted">2 分钟前</td>
+            <td><button class="btn ghost sm">详情 →</button></td>
+          </tr>
+          <tr>
+            <td class="mono">r_ae22cd31</td>
+            <td>异常流 · retry + dead-letter</td>
+            <td><span class="tag outline mono">v6</span></td>
+            <td><span class="tag primary">FULL</span></td>
+            <td>
+              <div class="progress">
+                <div class="seg ok"></div><div class="seg running"></div><div class="seg"></div>
+              </div>
+              <div class="muted mono" style="font-size:10px;margin-top:4px">Phase2 · 编译中</div>
+            </td>
+            <td><span class="tag info"><span class="dot"></span>进行中</span></td>
+            <td class="mono">1m 47s</td>
+            <td>杨震</td>
+            <td class="muted">刚刚</td>
+            <td><button class="btn ghost sm">详情 →</button></td>
+          </tr>
+          <tr>
+            <td class="mono">r_b81ef902</td>
+            <td>出向对账 · outbound</td>
+            <td><span class="tag outline mono">v23</span></td>
+            <td><span class="tag outline">PHASE1_ONLY</span></td>
+            <td>
+              <div class="progress">
+                <div class="seg fail"></div><div class="seg"></div><div class="seg"></div>
+              </div>
+              <div class="muted mono" style="font-size:10px;margin-top:4px">scenario sc_3c4d5e fail</div>
+            </td>
+            <td><span class="tag danger"><span class="dot"></span>invalid</span></td>
+            <td class="mono">12s</td>
+            <td>梁蒙</td>
+            <td class="muted">1 小时前</td>
+            <td><button class="btn ghost sm">详情 →</button></td>
+          </tr>
+          <tr>
+            <td class="mono">r_cf331abc</td>
+            <td>hash 校验 + DLQ 分流 demo</td>
+            <td><span class="tag outline mono">v12</span></td>
+            <td><span class="tag primary">FULL</span></td>
+            <td>
+              <div class="progress">
+                <div class="seg ok"></div><div class="seg ok"></div><div class="seg ok"></div>
+              </div>
+              <div class="muted mono" style="font-size:10px;margin-top:4px">3/3 scenarios</div>
+            </td>
+            <td><span class="tag success"><span class="dot"></span>通过</span></td>
+            <td class="mono">3m 14s</td>
+            <td>王洋</td>
+            <td class="muted">3 天前</td>
+            <td><button class="btn ghost sm">详情 →</button></td>
+          </tr>
+          <tr>
+            <td class="mono">r_d120ffa1</td>
+            <td>索引表结构校验 DAG</td>
+            <td><span class="tag outline mono">v3</span></td>
+            <td><span class="tag violet">UP_TO_PHASE2</span></td>
+            <td>
+              <div class="progress">
+                <div class="seg ok"></div><div class="seg ok"></div><div class="seg" style="background:transparent"></div>
+              </div>
+              <div class="muted mono" style="font-size:10px;margin-top:4px">Phase2 done · 不含 Phase3</div>
+            </td>
+            <td><span class="tag success"><span class="dot"></span>通过</span></td>
+            <td class="mono">58s</td>
+            <td>张伟</td>
+            <td class="muted">昨天</td>
+            <td><button class="btn ghost sm">详情 →</button></td>
+          </tr>
+          <tr>
+            <td class="mono">r_e9012ccc</td>
+            <td>风控规则流 · poc</td>
+            <td><span class="tag outline mono">draft</span></td>
+            <td><span class="tag outline">PHASE1_ONLY</span></td>
+            <td>
+              <div class="progress">
+                <div class="seg fail"></div><div class="seg"></div><div class="seg"></div>
+              </div>
+              <div class="muted mono" style="font-size:10px;margin-top:4px">structure_check fail · 有环</div>
+            </td>
+            <td><span class="tag danger"><span class="dot"></span>invalid</span></td>
+            <td class="mono">3s</td>
+            <td>杨震</td>
+            <td class="muted">昨天</td>
+            <td><button class="btn ghost sm">详情 →</button></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="muted" style="margin-top:12px;font-size:12px;text-align:center">共 118 条 · 显示 1–6</div>
+    </div>
+  </main>
+</div>
+</body>
+</html>

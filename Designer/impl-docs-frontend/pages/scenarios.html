@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>场景编辑器 · 级跳</title>
+<link rel="stylesheet" href="../assets/common.css">
+<style>
+  .app {
+    grid-template-columns: 56px 280px 1fr;
+    grid-template-areas:
+      "topbar topbar topbar"
+      "sidebar scenarios editor";
+  }
+  .sc-panel {
+    background: #fff; border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .sc-panel .head { padding: 12px 14px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  .sc-panel .head strong { font-size: 13px; }
+  .sc-list { flex: 1; overflow-y: auto; padding: 4px; }
+  .sc-item {
+    padding: 10px 12px; border-radius: var(--radius-sm); cursor: pointer;
+    display: flex; flex-direction: column; gap: 4px;
+    border: 1px solid transparent;
+  }
+  .sc-item:hover { background: var(--surface-2); }
+  .sc-item.active { background: var(--primary-soft); border-color: rgba(99,102,241,.3); }
+  .sc-item .name { font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 6px; }
+  .sc-item .sub { font-size: 11px; color: var(--text-muted); }
+  .sc-item .id { font-family: var(--mono); font-size: 10px; color: var(--text-dim); }
+  .sc-item .status-row { display: flex; gap: 4px; margin-top: 2px; }
+  .sc-footer { padding: 10px; border-top: 1px solid var(--border); display: flex; gap: 6px; }
+
+  .editor-wrap {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0; overflow: hidden;
+  }
+  .pane { display: flex; flex-direction: column; overflow: hidden; background: #0f172a; }
+  .pane + .pane { border-left: 1px solid rgba(255,255,255,.08); }
+  .pane .head {
+    padding: 10px 14px; color: #e2e8f0; font-size: 12px;
+    background: #1a2447;
+    display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid rgba(255,255,255,.08);
+  }
+  .pane .head .label { display: flex; align-items: center; gap: 6px; }
+  .pane .head .dot-ok { width: 8px; height: 8px; border-radius: 50%; background: #86efac; }
+  .pane .head .dot-pending { width: 8px; height: 8px; border-radius: 50%; background: #fbbf24; }
+  .pane .code-area {
+    flex: 1; overflow: auto; padding: 12px 16px;
+    font-family: var(--mono); font-size: 12px; line-height: 1.65;
+    color: #e2e8f0;
+  }
+  .pane .code-area .ln {
+    display: grid; grid-template-columns: 30px 1fr; gap: 8px;
+  }
+  .pane .code-area .num { color: #475569; user-select: none; text-align: right; }
+  .k { color: #c084fc; } .s { color: #86efac; } .n { color: #fbbf24; } .c { color: #64748b; font-style: italic; } .p { color: #94a3b8; }
+
+  /* bottom run bar */
+  .run-bar {
+    grid-column: 1/3;
+    padding: 12px 20px;
+    background: #fff; border-top: 1px solid var(--border);
+    display: flex; align-items: center; gap: 12px;
+  }
+  .run-bar .gid { display: flex; flex-direction: column; }
+  .run-bar .gid .l { font-size: 11px; color: var(--text-muted); }
+  .run-bar .gid .v { font-weight: 500; }
+  .run-bar .variant {
+    display: flex; gap: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden;
+  }
+  .run-bar .variant .opt {
+    padding: 6px 12px; font-size: 12px; cursor: pointer; color: var(--text-muted);
+  }
+  .run-bar .variant .opt.active { background: var(--primary); color: #fff; font-weight: 500; }
+</style>
+</head>
+<body>
+<div class="app" style="grid-template-rows: 48px 1fr auto;">
+  <div class="topbar">
+    <div class="logo"><span class="logo-mark">级</span><span>级跳</span></div>
+    <div class="breadcrumb">
+      <a href="graph-list.html">图列表</a><span class="sep">/</span>
+      <a href="canvas-editor.html">报文处理主流水线</a><span class="sep">/</span>
+      <strong>场景</strong>
+    </div>
+    <div class="spacer"></div>
+    <div class="actions">
+      <button class="btn sm">从历史 Run 导入</button>
+      <button class="btn sm">AI 生成场景</button>
+      <div class="user"><div class="avatar">YZ</div>杨震</div>
+    </div>
+  </div>
+  <nav class="sidebar-nav">
+    <a class="nav-item" href="graph-list.html"><svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span class="tip">图列表</span></a>
+    <a class="nav-item" href="canvas-editor.html"><svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="18" r="3"/></svg><span class="tip">画布</span></a>
+    <a class="nav-item active"><svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg><span class="tip">场景</span></a>
+  </nav>
+
+  <aside class="sc-panel">
+    <div class="head">
+      <strong>场景 (5)</strong>
+      <button class="btn sm">+ 新建</button>
+    </div>
+    <div class="sc-list">
+      <div class="sc-item active">
+        <div class="name">正常报文 · hash 匹配 <span class="tag success" style="font-size:10px">主路</span></div>
+        <div class="sub">hash → SchemaValidate → WriteKafka</div>
+        <div class="id">sc_1a2b3c</div>
+      </div>
+      <div class="sc-item">
+        <div class="name">hash 不匹配 → DeadLetter</div>
+        <div class="sub">on_mismatch 分支</div>
+        <div class="id">sc_2b3c4d</div>
+        <div class="status-row"><span class="tag success" style="font-size:10px">已通过</span></div>
+      </div>
+      <div class="sc-item">
+        <div class="name">Schema 缺字段 → retry</div>
+        <div class="sub">回退路径</div>
+        <div class="id">sc_3c4d5e</div>
+        <div class="status-row"><span class="tag danger" style="font-size:10px">上次失败</span></div>
+      </div>
+      <div class="sc-item">
+        <div class="name">空载荷</div>
+        <div class="sub">边缘用例</div>
+        <div class="id">sc_4d5e6f</div>
+      </div>
+      <div class="sc-item">
+        <div class="name">超大报文 · 128KB</div>
+        <div class="sub">性能边缘</div>
+        <div class="id">sc_5e6f7g</div>
+      </div>
+    </div>
+    <div class="sc-footer">
+      <button class="btn ghost sm" style="flex:1">导入 JSON</button>
+      <button class="btn ghost sm" style="flex:1">导出全部</button>
+    </div>
+  </aside>
+
+  <div class="editor-wrap">
+    <div class="pane">
+      <div class="head">
+        <div class="label"><span class="dot-ok"></span> input_json <span class="muted" style="color:#94a3b8">· 画布的"森林入口"</span></div>
+        <span class="muted mono" style="color:#94a3b8">JSON</span>
+      </div>
+      <div class="code-area">
+<div class="ln"><span class="num">1</span><span><span class="p">{</span></span></div>
+<div class="ln"><span class="num">2</span><span>  <span class="k">"message_id"</span>: <span class="s">"m_20260418_001"</span>,</span></div>
+<div class="ln"><span class="num">3</span><span>  <span class="k">"header"</span>: <span class="p">{</span></span></div>
+<div class="ln"><span class="num">4</span><span>    <span class="k">"hash"</span>: <span class="s">"a3f4b2c7e1d9..."</span>,</span></div>
+<div class="ln"><span class="num">5</span><span>    <span class="k">"algorithm"</span>: <span class="s">"sha256"</span>,</span></div>
+<div class="ln"><span class="num">6</span><span>    <span class="k">"source"</span>: <span class="s">"ext_channel_A"</span></span></div>
+<div class="ln"><span class="num">7</span><span>  <span class="p">}</span>,</span></div>
+<div class="ln"><span class="num">8</span><span>  <span class="k">"payload"</span>: <span class="p">{</span></span></div>
+<div class="ln"><span class="num">9</span><span>    <span class="k">"trade_id"</span>: <span class="s">"t_88201"</span>,</span></div>
+<div class="ln"><span class="num">10</span><span>    <span class="k">"amount"</span>: <span class="n">12850</span>,</span></div>
+<div class="ln"><span class="num">11</span><span>    <span class="k">"currency"</span>: <span class="s">"CNY"</span>,</span></div>
+<div class="ln"><span class="num">12</span><span>    <span class="k">"timestamp"</span>: <span class="s">"2026-04-18T10:02:33Z"</span></span></div>
+<div class="ln"><span class="num">13</span><span>  <span class="p">}</span></span></div>
+<div class="ln"><span class="num">14</span><span><span class="p">}</span></span></div>
+      </div>
+    </div>
+
+    <div class="pane">
+      <div class="head">
+        <div class="label"><span class="dot-ok"></span> expected_output_json <span class="muted" style="color:#94a3b8">· 期望森林跑完后的终态</span></div>
+        <span class="muted mono" style="color:#94a3b8">字段级精确对比</span>
+      </div>
+      <div class="code-area">
+<div class="ln"><span class="num">1</span><span><span class="c">// 字段级精确对比:{status:"ok"} ≠ {status:"success"}</span></span></div>
+<div class="ln"><span class="num">2</span><span><span class="p">{</span></span></div>
+<div class="ln"><span class="num">3</span><span>  <span class="k">"verdict"</span>: <span class="s">"ok"</span>,</span></div>
+<div class="ln"><span class="num">4</span><span>  <span class="k">"path"</span>: <span class="p">[</span></span></div>
+<div class="ln"><span class="num">5</span><span>    <span class="s">"n_aa11bb22"</span>, <span class="c">// ParseHeader</span></span></div>
+<div class="ln"><span class="num">6</span><span>    <span class="s">"n_2d91ab03"</span>, <span class="c">// HashCheck (on_match)</span></span></div>
+<div class="ln"><span class="num">7</span><span>    <span class="s">"n_9f01cc28"</span>, <span class="c">// SchemaValidate</span></span></div>
+<div class="ln"><span class="num">8</span><span>    <span class="s">"n_7c22aa11"</span>, <span class="c">// BranchByField</span></span></div>
+<div class="ln"><span class="num">9</span><span>    <span class="s">"n_6bc1e42f"</span>  <span class="c">// WriteKafka</span></span></div>
+<div class="ln"><span class="num">10</span><span>  <span class="p">]</span>,</span></div>
+<div class="ln"><span class="num">11</span><span>  <span class="k">"sink_output"</span>: <span class="p">{</span></span></div>
+<div class="ln"><span class="num">12</span><span>    <span class="k">"topic"</span>: <span class="s">"trade.inbound.clean"</span>,</span></div>
+<div class="ln"><span class="num">13</span><span>    <span class="k">"partition_key"</span>: <span class="s">"t_88201"</span>,</span></div>
+<div class="ln"><span class="num">14</span><span>    <span class="k">"bytes"</span>: <span class="n">387</span></span></div>
+<div class="ln"><span class="num">15</span><span>  <span class="p">}</span>,</span></div>
+<div class="ln"><span class="num">16</span><span>  <span class="k">"side_effects"</span>: <span class="p">{</span></span></div>
+<div class="ln"><span class="num">17</span><span>    <span class="k">"dlq_count"</span>: <span class="n">0</span>,</span></div>
+<div class="ln"><span class="num">18</span><span>    <span class="k">"retry_count"</span>: <span class="n">0</span></span></div>
+<div class="ln"><span class="num">19</span><span>  <span class="p">}</span></span></div>
+<div class="ln"><span class="num">20</span><span><span class="p">}</span></span></div>
+      </div>
+    </div>
+
+    <div class="run-bar">
+      <div class="gid">
+        <span class="l">图 · 版本</span>
+        <span class="v"><span class="mono">g_a1b2c3d4</span> @ <span class="tag primary">draft v18</span></span>
+      </div>
+      <div class="spacer" style="flex:1"></div>
+      <span class="muted" style="font-size:12px">Pipeline</span>
+      <div class="variant">
+        <span class="opt active">PHASE1_ONLY</span>
+        <span class="opt">UP_TO_PHASE2</span>
+        <span class="opt">FULL</span>
+      </div>
+      <button class="btn sm">仅跑本场景</button>
+      <button class="btn primary">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        触发 Run · 5 场景
+      </button>
+    </div>
+  </div>
+</div>
+</body>
+</html>

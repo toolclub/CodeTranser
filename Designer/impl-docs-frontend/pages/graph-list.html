@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>图列表 · 级跳</title>
+<link rel="stylesheet" href="../assets/common.css">
+<style>
+  .page { padding: 24px 32px 48px; max-width: 1400px; margin: 0 auto; }
+  .page h2 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+  .page .sub { color: var(--text-muted); font-size: 13px; margin-bottom: 20px; }
+  .toolbar {
+    display: flex; gap: 12px; align-items: center; margin-bottom: 16px;
+  }
+  .search { flex: 1; max-width: 360px; position: relative; }
+  .search input { padding-left: 32px; }
+  .search::before {
+    content: ''; position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+    width: 14px; height: 14px;
+    background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'><circle cx='11' cy='11' r='7'/><path d='M21 21l-4.3-4.3'/></svg>") no-repeat center/contain;
+  }
+  .filters { display: flex; gap: 6px; }
+  .chip {
+    padding: 4px 10px; border-radius: 999px; font-size: 12px;
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text-muted); cursor: pointer;
+  }
+  .chip.active { background: var(--primary-soft); color: var(--primary); border-color: var(--primary); }
+  table.graphs { width: 100%; border-collapse: separate; border-spacing: 0; background: #fff; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  table.graphs th, table.graphs td { padding: 12px 16px; text-align: left; font-size: 13px; border-bottom: 1px solid var(--border); }
+  table.graphs th { background: var(--surface-2); color: var(--text-muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: .3px; }
+  table.graphs tr:last-child td { border-bottom: none; }
+  table.graphs tr:hover td { background: var(--surface-2); }
+  .graph-title { display: flex; flex-direction: column; gap: 2px; }
+  .graph-title strong { font-weight: 500; color: var(--text); }
+  .graph-title .gid { color: var(--text-dim); font-family: var(--mono); font-size: 11px; }
+  .avatars { display: flex; }
+  .avatars .ava {
+    width: 22px; height: 22px; border-radius: 50%; border: 2px solid #fff;
+    margin-left: -6px; display: grid; place-items: center; font-size: 10px; font-weight: 600; color: #fff;
+  }
+  .avatars .ava:first-child { margin-left: 0; }
+  .row-actions { display: flex; gap: 4px; justify-content: flex-end; }
+  .stats-strip {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px;
+  }
+  .stat {
+    background: #fff; border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 14px 16px;
+  }
+  .stat .label { color: var(--text-muted); font-size: 12px; }
+  .stat .val { font-size: 22px; font-weight: 600; margin-top: 2px; color: var(--text); }
+  .stat .delta { font-size: 11px; margin-top: 4px; }
+  .stat .delta.up { color: var(--success); }
+  .stat .delta.down { color: var(--danger); }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="logo"><span class="logo-mark">级</span><span>级跳</span></div>
+    <div class="breadcrumb"><strong>图列表</strong></div>
+    <div class="spacer"></div>
+    <div class="actions">
+      <button class="btn ghost sm">帮助</button>
+      <div class="user"><div class="avatar">YZ</div>杨震 · 设计员</div>
+    </div>
+  </div>
+  <nav class="sidebar-nav">
+    <a class="nav-item active" href="graph-list.html"><svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span class="tip">图列表</span></a>
+    <a class="nav-item" href="template-library.html"><svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 7L12 3L4 7L12 11L20 7Z"/><path d="M4 12L12 16L20 12"/><path d="M4 17L12 21L20 17"/></svg><span class="tip">节点模板库</span></a>
+    <a class="nav-item" href="run-list.html"><svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg><span class="tip">运行记录</span></a>
+    <a class="nav-item" href="review.html"><svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="tip">Review</span></a>
+  </nav>
+  <main class="main">
+    <div class="page">
+      <h2>我的设计图</h2>
+      <div class="sub">你创建或有权限查看的所有 CascadeGraph。</div>
+
+      <div class="stats-strip">
+        <div class="stat"><div class="label">图总数</div><div class="val">24</div><div class="delta up">+3 本周</div></div>
+        <div class="stat"><div class="label">近 7 日 Run</div><div class="val">118</div><div class="delta up">+22%</div></div>
+        <div class="stat"><div class="label">Phase1 通过率</div><div class="val">84%</div><div class="delta down">-2%</div></div>
+        <div class="stat"><div class="label">待 Review</div><div class="val">5</div><div class="delta">持平</div></div>
+      </div>
+
+      <div class="toolbar">
+        <div class="search"><input class="input" placeholder="按图名称 / ID 搜索..."></div>
+        <div class="filters">
+          <span class="chip active">全部</span>
+          <span class="chip">我的</span>
+          <span class="chip">共享给我</span>
+          <span class="chip">已归档</span>
+        </div>
+        <div class="spacer" style="flex:1"></div>
+        <button class="btn">
+          <svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+          排序:最近改动
+        </button>
+        <button class="btn primary">
+          <svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          新建图
+        </button>
+      </div>
+
+      <table class="graphs">
+        <thead>
+          <tr>
+            <th style="width:36%">图</th>
+            <th>最新版本</th>
+            <th>最近 Run</th>
+            <th>协作者</th>
+            <th>改动时间</th>
+            <th style="width:120px"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              <div class="graph-title">
+                <strong>报文处理主流水线 · inbound</strong>
+                <span class="gid">g_a1b2c3d4</span>
+              </div>
+            </td>
+            <td><span class="tag outline mono">gv_3f8e</span> <span class="muted">· v17</span></td>
+            <td>
+              <span class="status-dot success"></span> <span class="muted">Phase3 通过</span>
+              <div class="dim" style="font-size:11px">r_91a7c22d · 2 分钟前</div>
+            </td>
+            <td>
+              <div class="avatars">
+                <div class="ava" style="background:#6366f1">YZ</div>
+                <div class="ava" style="background:#ec4899">LM</div>
+                <div class="ava" style="background:#10b981">ZW</div>
+              </div>
+            </td>
+            <td class="muted">3 分钟前</td>
+            <td class="row-actions">
+              <a href="canvas-editor.html" class="btn sm primary">打开</a>
+              <button class="btn sm ghost">⋯</button>
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <div class="graph-title">
+                <strong>异常流 · retry + dead-letter</strong>
+                <span class="gid">g_b2c3d4e5</span>
+              </div>
+            </td>
+            <td><span class="tag outline mono">gv_7c1a</span> <span class="muted">· v6</span></td>
+            <td>
+              <span class="status-dot running"></span> <span class="muted">Phase2 进行中</span>
+              <div class="dim" style="font-size:11px">r_ae22cd31 · 实时</div>
+            </td>
+            <td>
+              <div class="avatars">
+                <div class="ava" style="background:#8b5cf6">YZ</div>
+                <div class="ava" style="background:#f59e0b">QL</div>
+              </div>
+            </td>
+            <td class="muted">18 分钟前</td>
+            <td class="row-actions">
+              <a href="canvas-editor.html" class="btn sm primary">打开</a>
+              <button class="btn sm ghost">⋯</button>
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <div class="graph-title">
+                <strong>出向对账 · outbound</strong>
+                <span class="gid">g_c3d4e5f6</span>
+                <span class="tag info" style="margin-top:2px">共享</span>
+              </div>
+            </td>
+            <td><span class="tag outline mono">gv_22a0</span> <span class="muted">· v23</span></td>
+            <td>
+              <span class="status-dot failed"></span> <span class="muted">Phase1 invalid</span>
+              <div class="dim" style="font-size:11px">r_b81ef902 · 1 小时前</div>
+            </td>
+            <td>
+              <div class="avatars">
+                <div class="ava" style="background:#ec4899">LM</div>
+                <div class="ava" style="background:#6366f1">YZ</div>
+                <div class="ava" style="background:#64748b">+4</div>
+              </div>
+            </td>
+            <td class="muted">1 小时前</td>
+            <td class="row-actions">
+              <a href="canvas-editor.html" class="btn sm">打开</a>
+              <button class="btn sm ghost">⋯</button>
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <div class="graph-title">
+                <strong>索引表结构校验 DAG</strong>
+                <span class="gid">g_d4e5f6a7</span>
+              </div>
+            </td>
+            <td><span class="tag outline mono">gv_88ab</span> <span class="muted">· v3</span></td>
+            <td>
+              <span class="status-dot warning"></span> <span class="muted">待验证</span>
+              <div class="dim" style="font-size:11px">—</div>
+            </td>
+            <td>
+              <div class="avatars">
+                <div class="ava" style="background:#10b981">ZW</div>
+              </div>
+            </td>
+            <td class="muted">昨天 22:41</td>
+            <td class="row-actions">
+              <a href="canvas-editor.html" class="btn sm">打开</a>
+              <button class="btn sm ghost">⋯</button>
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <div class="graph-title">
+                <strong>hash 校验 + DLQ 分流 demo</strong>
+                <span class="gid">g_e5f6a7b8</span>
+              </div>
+            </td>
+            <td><span class="tag outline mono">gv_0c44</span> <span class="muted">· v12</span></td>
+            <td>
+              <span class="status-dot success"></span> <span class="muted">Phase3 通过</span>
+              <div class="dim" style="font-size:11px">r_cf331abc · 3 天前</div>
+            </td>
+            <td>
+              <div class="avatars">
+                <div class="ava" style="background:#06b6d4">WY</div>
+                <div class="ava" style="background:#6366f1">YZ</div>
+              </div>
+            </td>
+            <td class="muted">3 天前</td>
+            <td class="row-actions">
+              <a href="canvas-editor.html" class="btn sm">打开</a>
+              <button class="btn sm ghost">⋯</button>
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <div class="graph-title">
+                <strong>风控规则流 · poc</strong>
+                <span class="gid">g_f6a7b8c9</span>
+                <span class="tag warning" style="margin-top:2px">草稿</span>
+              </div>
+            </td>
+            <td class="muted">—</td>
+            <td class="muted">—</td>
+            <td>
+              <div class="avatars"><div class="ava" style="background:#6366f1">YZ</div></div>
+            </td>
+            <td class="muted">昨天 17:02</td>
+            <td class="row-actions">
+              <a href="canvas-editor.html" class="btn sm">打开</a>
+              <button class="btn sm ghost">⋯</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="muted" style="margin-top:12px;font-size:12px;text-align:center">
+        共 24 张图 · 显示 1–6
+      </div>
+    </div>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Review · 级跳</title>
+<link rel="stylesheet" href="../assets/common.css">
+<style>
+  .app {
+    grid-template-columns: 56px 1fr 380px;
+    grid-template-areas:
+      "topbar topbar topbar"
+      "sidebar canvas thread";
+  }
+  .canvas-area { background:
+      radial-gradient(circle, #d1d5db 1px, transparent 1px) 0 0/24px 24px, #f6f7fb;
+      position: relative; overflow: auto; padding: 24px;
+  }
+  .cv-title { background: #fff; border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; }
+  .cv-title strong { font-size: 14px; }
+
+  /* Fake canvas rendered as SVG */
+  .mock-canvas {
+    background: #fff; border: 1px solid var(--border); border-radius: var(--radius);
+    overflow: hidden;
+    position: relative;
+  }
+
+  .comment-pin {
+    position: absolute;
+    width: 28px; height: 28px;
+    border-radius: 14px 14px 14px 0;
+    background: var(--warning);
+    color: #fff;
+    display: grid; place-items: center;
+    font-size: 11px; font-weight: 700;
+    transform: rotate(-45deg);
+    border: 2px solid #fff;
+    box-shadow: var(--shadow);
+    cursor: pointer;
+  }
+  .comment-pin span { transform: rotate(45deg); }
+  .comment-pin.resolved { background: var(--success); }
+  .comment-pin.active {
+    background: var(--primary);
+    box-shadow: 0 0 0 4px rgba(99,102,241,.2), var(--shadow);
+  }
+
+  .thread {
+    background: #fff; border-left: 1px solid var(--border);
+    display: flex; flex-direction: column;
+  }
+  .thread .h {
+    padding: 12px 16px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .thread .h strong { font-size: 13px; }
+  .thread .scroll { flex: 1; overflow-y: auto; padding: 8px 0; }
+  .cgroup { border-bottom: 1px solid var(--border); padding: 12px 16px; }
+  .cgroup .anchor {
+    font-size: 11px; color: var(--text-muted); margin-bottom: 8px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .cgroup .anchor .loc { background: var(--surface-3); padding: 2px 6px; border-radius: 4px; font-family: var(--mono); color: var(--text); }
+  .msg { display: grid; grid-template-columns: 28px 1fr; gap: 10px; padding: 8px 0; }
+  .msg .av { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-size: 10px; font-weight: 600; }
+  .msg .bubble .who { font-size: 12px; font-weight: 500; }
+  .msg .bubble .t { color: var(--text-dim); font-size: 10px; margin-left: 6px; }
+  .msg .bubble .body { font-size: 13px; margin-top: 2px; line-height: 1.5; }
+  .reply {
+    display: flex; gap: 8px; padding: 8px 16px; border-top: 1px solid var(--border);
+    background: var(--surface-2);
+  }
+  .reply textarea { flex: 1; min-height: 54px; padding: 6px 10px; font-family: inherit; font-size: 13px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+
+  .verdict-bar {
+    padding: 14px 16px; border-top: 1px solid var(--border);
+    background: #fff; display: flex; gap: 8px; align-items: center;
+  }
+
+  .summary {
+    margin-top: 16px;
+    background: #fff; border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 12px 16px;
+  }
+  .summary .rule { height: 1px; background: var(--border); margin: 8px 0; }
+  .summary .row { display: flex; justify-content: space-between; font-size: 12px; padding: 3px 0; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="logo"><span class="logo-mark">级</span><span>级跳</span></div>
+    <div class="breadcrumb">
+      <a href="graph-list.html">图列表</a><span class="sep">/</span>
+      <a href="canvas-editor.html">报文处理主流水线</a><span class="sep">/</span>
+      <strong>Review rv_a81f</strong>
+      <span class="tag warning" style="margin-left:8px"><span class="dot"></span>待批准</span>
+    </div>
+    <div class="spacer"></div>
+    <div class="actions">
+      <div class="user"><div class="avatar" style="background:linear-gradient(135deg,#f59e0b,#ec4899)">LM</div>梁蒙 · 复核人员</div>
+    </div>
+  </div>
+  <nav class="sidebar-nav">
+    <a class="nav-item" href="graph-list.html"><svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/></svg><span class="tip">图列表</span></a>
+    <a class="nav-item active"><svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="tip">Review</span></a>
+  </nav>
+
+  <main class="canvas-area">
+    <div class="cv-title">
+      <div>
+        <strong>报文处理主流水线 · inbound</strong>
+        <span class="muted" style="margin-left:8px">gv_3f8e · v17 · 已通过 Phase3</span>
+      </div>
+      <div style="display:flex;gap:6px">
+        <span class="tag success"><span class="dot"></span>Phase3 通过</span>
+        <span class="tag warning">3 处待讨论</span>
+        <span class="tag success">2 已解决</span>
+      </div>
+    </div>
+
+    <div class="mock-canvas" style="padding:0">
+      <svg viewBox="0 0 1000 440" style="width:100%;height:auto;display:block">
+        <!-- bundle A -->
+        <rect x="40" y="40" width="520" height="200" rx="12"
+              fill="rgba(139,92,246,.04)" stroke="#8b5cf6"
+              stroke-width="1.2" stroke-dasharray="6 4"/>
+        <text x="56" y="62" fill="#6d28d9" font-size="12" font-weight="600">verify · 报文校验 Bundle</text>
+        <text x="56" y="78" fill="#a78bfa" font-size="10" font-family="monospace">bnd_verify</text>
+
+        <!-- nodes in bundle A -->
+        <g>
+          <rect x="76" y="110" width="140" height="46" rx="8" fill="#fff" stroke="#cbd5e1" filter="url(#sh)"/>
+          <rect x="86" y="121" width="24" height="24" rx="6" fill="#6366f1"/>
+          <text x="98" y="137" text-anchor="middle" fill="#fff" font-size="11" font-weight="700">PH</text>
+          <text x="120" y="130" fill="#0f172a" font-size="13" font-weight="500">ParseHeader</text>
+          <text x="120" y="146" fill="#94a3b8" font-size="10" font-family="monospace">n_aa11</text>
+        </g>
+        <g>
+          <rect x="256" y="110" width="140" height="46" rx="8" fill="#fff" stroke="#cbd5e1" filter="url(#sh)"/>
+          <rect x="266" y="121" width="24" height="24" rx="6" fill="#10b981"/>
+          <text x="278" y="137" text-anchor="middle" fill="#fff" font-size="11" font-weight="700">HC</text>
+          <text x="300" y="130" fill="#0f172a" font-size="13" font-weight="500">HashCheck</text>
+          <text x="300" y="146" fill="#94a3b8" font-size="10" font-family="monospace">n_2d91</text>
+        </g>
+        <g>
+          <rect x="410" y="170" width="140" height="46" rx="8" fill="#fff" stroke="#cbd5e1" filter="url(#sh)"/>
+          <rect x="420" y="181" width="24" height="24" rx="6" fill="#10b981"/>
+          <text x="432" y="197" text-anchor="middle" fill="#fff" font-size="11" font-weight="700">SV</text>
+          <text x="454" y="190" fill="#0f172a" font-size="13" font-weight="500">SchemaValidate</text>
+          <text x="454" y="206" fill="#94a3b8" font-size="10" font-family="monospace">n_9f01</text>
+        </g>
+
+        <!-- bundle B -->
+        <rect x="600" y="40" width="360" height="200" rx="12"
+              fill="rgba(139,92,246,.04)" stroke="#8b5cf6"
+              stroke-width="1.2" stroke-dasharray="6 4"/>
+        <text x="616" y="62" fill="#6d28d9" font-size="12" font-weight="600">dispatch · 路由分发 Bundle</text>
+        <text x="616" y="78" fill="#a78bfa" font-size="10" font-family="monospace">bnd_dispatch</text>
+
+        <g>
+          <rect x="630" y="110" width="140" height="46" rx="8" fill="#fff" stroke="#cbd5e1" filter="url(#sh)"/>
+          <rect x="640" y="121" width="24" height="24" rx="6" fill="#8b5cf6"/>
+          <text x="652" y="137" text-anchor="middle" fill="#fff" font-size="11" font-weight="700">BF</text>
+          <text x="674" y="130" fill="#0f172a" font-size="13" font-weight="500">BranchByField</text>
+          <text x="674" y="146" fill="#94a3b8" font-size="10" font-family="monospace">n_7c22</text>
+        </g>
+        <g>
+          <rect x="800" y="170" width="140" height="46" rx="8" fill="#fff" stroke="#cbd5e1" filter="url(#sh)"/>
+          <rect x="810" y="181" width="24" height="24" rx="6" fill="#f59e0b"/>
+          <text x="822" y="197" text-anchor="middle" fill="#fff" font-size="11" font-weight="700">WK</text>
+          <text x="844" y="190" fill="#0f172a" font-size="13" font-weight="500">WriteKafka</text>
+          <text x="844" y="206" fill="#94a3b8" font-size="10" font-family="monospace">n_6bc1</text>
+        </g>
+
+        <!-- free nodes -->
+        <g>
+          <rect x="370" y="330" width="140" height="46" rx="8" fill="#fff" stroke="#cbd5e1" filter="url(#sh)"/>
+          <rect x="380" y="341" width="24" height="24" rx="6" fill="#06b6d4"/>
+          <text x="392" y="357" text-anchor="middle" fill="#fff" font-size="11" font-weight="700">MG</text>
+          <text x="414" y="350" fill="#0f172a" font-size="13" font-weight="500">Merge (游离)</text>
+          <text x="414" y="366" fill="#94a3b8" font-size="10" font-family="monospace">n_free</text>
+        </g>
+        <g>
+          <rect x="700" y="330" width="140" height="46" rx="8" fill="#fff" stroke="#cbd5e1" filter="url(#sh)"/>
+          <rect x="710" y="341" width="24" height="24" rx="6" fill="#ef4444"/>
+          <text x="722" y="357" text-anchor="middle" fill="#fff" font-size="11" font-weight="700">DL</text>
+          <text x="744" y="350" fill="#0f172a" font-size="13" font-weight="500">DeadLetter</text>
+          <text x="744" y="366" fill="#94a3b8" font-size="10" font-family="monospace">n_7a01</text>
+        </g>
+
+        <!-- edges -->
+        <path d="M216 133 L256 133" stroke="#94a3b8" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+        <path d="M396 133 Q420 160 480 170" stroke="#94a3b8" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+        <path d="M326 156 Q450 260 700 353" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="5 4" fill="none" marker-end="url(#arrowRed)"/>
+        <path d="M550 193 L630 133" stroke="#94a3b8" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+        <path d="M770 133 L850 170" stroke="#94a3b8" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+        <path d="M490 216 L440 330" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="5 4" fill="none" marker-end="url(#arrowRed)"/>
+        <path d="M510 353 Q650 353 800 353" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="5 4" fill="none" marker-end="url(#arrowRed)"/>
+
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/>
+          </marker>
+          <marker id="arrowRed" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" fill="#ef4444"/>
+          </marker>
+          <filter id="sh" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="0" dy="1" stdDeviation="2" flood-opacity=".08"/>
+          </filter>
+        </defs>
+      </svg>
+
+      <!-- Comment pins -->
+      <div class="comment-pin" style="top:120px;left:330px" title="HashCheck 算法选型"><span>1</span></div>
+      <div class="comment-pin active" style="top:180px;left:485px" title="当前评论"><span>2</span></div>
+      <div class="comment-pin resolved" style="top:155px;left:745px"><span>3</span></div>
+      <div class="comment-pin" style="top:340px;left:480px"><span>4</span></div>
+      <div class="comment-pin resolved" style="top:365px;left:810px"><span>5</span></div>
+    </div>
+
+    <div class="summary">
+      <div style="font-weight:600">Review 摘要</div>
+      <div class="rule"></div>
+      <div class="row"><span class="muted">图版本</span><span class="mono">gv_3f8e · v17</span></div>
+      <div class="row"><span class="muted">代码快照</span><span class="mono">cs_2a11 · 12 文件</span></div>
+      <div class="row"><span class="muted">Phase1 通过率</span><span>5 / 5 · 100%</span></div>
+      <div class="row"><span class="muted">Phase3 通过率</span><span>5 / 5 · 100%</span></div>
+      <div class="row"><span class="muted">评论</span><span>3 待讨论 · 2 已解决</span></div>
+      <div class="row"><span class="muted">审核人</span><span>梁蒙(进行中)· 周伟</span></div>
+    </div>
+  </main>
+
+  <aside class="thread">
+    <div class="h">
+      <strong>评论 · 5</strong>
+      <div style="display:flex;gap:4px">
+        <button class="btn ghost sm">待解决</button>
+        <button class="btn ghost sm">全部</button>
+      </div>
+    </div>
+    <div class="scroll">
+      <div class="cgroup">
+        <div class="anchor">
+          📍 锚点 <span class="loc">SchemaValidate (n_9f01cc28)</span>
+        </div>
+        <div class="msg">
+          <div class="av" style="background:#ec4899">LM</div>
+          <div class="bubble">
+            <span class="who">梁蒙</span><span class="t">10 分钟前</span>
+            <div class="body">这里没有处理 <span class="mono">required</span> 字段缺失的情况,应该直接走 <span class="mono">on_invalid</span> 到 DeadLetter,目前会吃掉异常。</div>
+          </div>
+        </div>
+        <div class="msg">
+          <div class="av" style="background:#6366f1">YZ</div>
+          <div class="bubble">
+            <span class="who">杨震</span><span class="t">8 分钟前</span>
+            <div class="body">好的,我加一条 on_invalid 边到 <span class="mono">DeadLetter (n_7a01ef11)</span>。</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;margin-top:6px">
+          <button class="btn sm">标记解决</button>
+          <button class="btn ghost sm">引用为任务</button>
+        </div>
+      </div>
+
+      <div class="cgroup" style="background:var(--primary-soft)">
+        <div class="anchor">📍 锚点 <span class="loc">edge e_2d→7a (跨 bundle)</span> <span class="tag primary">当前</span></div>
+        <div class="msg">
+          <div class="av" style="background:#f59e0b">QL</div>
+          <div class="bubble">
+            <span class="who">覃磊</span><span class="t">15 分钟前</span>
+            <div class="body">跨 bundle 的边在 Phase2 生成代码时,请确认是用指针还是消息总线。如果是指针,DeadLetter 必须在 VerifyPipeline 的构造函数里被注入。</div>
+          </div>
+        </div>
+        <div class="msg">
+          <div class="av" style="background:#6366f1">YZ</div>
+          <div class="bubble">
+            <span class="who">杨震</span><span class="t">12 分钟前</span>
+            <div class="body">目前 Phase2 生成的是指针注入,见 <a href="code-diff.html" class="mono" style="color:var(--primary)">VerifyPipeline.cpp:21</a>。</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="cgroup">
+        <div class="anchor">
+          📍 锚点 <span class="loc">bnd_dispatch</span>
+          <span class="tag success" style="margin-left:auto">已解决</span>
+        </div>
+        <div class="msg">
+          <div class="av" style="background:#10b981">ZW</div>
+          <div class="bubble">
+            <span class="who">周伟</span><span class="t">昨天</span>
+            <div class="body">这个 bundle 能不能拆成 2 个?感觉 BranchByField + WriteKafka 粒度太粗。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="reply">
+      <div class="avatar" style="background:linear-gradient(135deg,#f59e0b,#ec4899)">LM</div>
+      <textarea placeholder="回复或 @mention..."></textarea>
+    </div>
+
+    <div class="verdict-bar">
+      <button class="btn" style="flex:1">请求修改</button>
+      <button class="btn primary" style="flex:1">批准</button>
+    </div>
+  </aside>
+</div>
+</body>
+</html>

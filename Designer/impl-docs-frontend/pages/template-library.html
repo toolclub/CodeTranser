@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>节点模板库 · 级跳</title>
+<link rel="stylesheet" href="../assets/common.css">
+<style>
+  .page { padding: 24px 32px 48px; max-width: 1400px; margin: 0 auto; }
+  .page h2 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+  .page .sub { color: var(--text-muted); font-size: 13px; margin-bottom: 20px; }
+  .toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; }
+  .search { flex: 1; max-width: 320px; }
+  .chips { display: flex; gap: 6px; }
+  .chip { padding: 4px 10px; border-radius: 999px; font-size: 12px; background: #fff; border: 1px solid var(--border); color: var(--text-muted); cursor: pointer; }
+  .chip.active { background: var(--primary-soft); color: var(--primary); border-color: var(--primary); }
+
+  .tpl-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px;
+  }
+  .tpl-card {
+    background: #fff; border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 14px 16px; display: flex; flex-direction: column; gap: 8px;
+    cursor: pointer; transition: all .15s;
+  }
+  .tpl-card:hover { border-color: var(--primary); box-shadow: 0 4px 16px rgba(99,102,241,.15); }
+  .tpl-card .head { display: flex; align-items: center; gap: 10px; }
+  .tpl-card .ic { width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 13px; }
+  .tpl-card .name { font-weight: 600; font-size: 14px; }
+  .tpl-card .sub { font-size: 11px; color: var(--text-muted); font-family: var(--mono); }
+  .tpl-card .desc { font-size: 12px; color: var(--text-muted); line-height: 1.5;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .tpl-card .meta-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+
+  .category-head {
+    display: flex; align-items: center; gap: 10px;
+    margin: 20px 0 10px;
+    font-weight: 600; font-size: 14px; color: var(--text);
+  }
+  .category-head .c { color: var(--text-muted); font-weight: 400; font-size: 12px; }
+  .category-head .dot { width: 10px; height: 10px; border-radius: 50%; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="logo"><span class="logo-mark">级</span><span>级跳</span></div>
+    <div class="breadcrumb"><strong>节点模板库</strong></div>
+    <div class="spacer"></div>
+    <div class="actions">
+      <button class="btn sm">导入 JSON</button>
+      <button class="btn primary sm" onclick="location.href='template-editor.html'">+ 新建节点模板</button>
+      <div class="user"><div class="avatar">YZ</div>杨震</div>
+    </div>
+  </div>
+  <nav class="sidebar-nav">
+    <a class="nav-item" href="graph-list.html"><svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span class="tip">图列表</span></a>
+    <a class="nav-item active"><svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 7L12 3L4 7L12 11L20 7Z"/><path d="M4 12L12 16L20 12"/></svg><span class="tip">模板库</span></a>
+    <a class="nav-item" href="run-list.html"><svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg><span class="tip">运行</span></a>
+  </nav>
+  <main class="main">
+    <div class="page">
+      <h2>节点模板库</h2>
+      <div class="sub">节点模板 = 画布上可拖拽的"节点种类",也是后端解释器。前端只看 <span class="mono">NodeTemplateCardDTO</span>;完整定义由后端 admin API 提供。</div>
+
+      <div class="toolbar">
+        <div class="search"><input class="input" placeholder="搜索名称 / 描述..."/></div>
+        <div class="chips">
+          <span class="chip active">全部</span>
+          <span class="chip">全局</span>
+          <span class="chip">我的私有</span>
+          <span class="chip">团队共享</span>
+          <span class="chip">engine=py</span>
+          <span class="chip">engine=llm</span>
+        </div>
+        <div class="spacer" style="flex:1"></div>
+        <button class="btn sm">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          网格
+        </button>
+        <button class="btn sm ghost">列表</button>
+      </div>
+
+      <div class="category-head"><span class="dot" style="background:#6366f1"></span>表操作 <span class="c">· 6 个模板</span></div>
+      <div class="tpl-grid">
+        <div class="tpl-card" onclick="location.href='template-editor.html'">
+          <div class="head">
+            <div class="ic" style="background:#6366f1">IT</div>
+            <div><div class="name">IndexTableLookup</div><div class="sub">tpl_idxlookup · v7</div></div>
+          </div>
+          <div class="desc">根据指定 key 在预载入的索引表中查找,命中返回 record,否则走 miss 边。</div>
+          <div class="meta-row">
+            <span class="tag success"><span class="dot"></span>py</span>
+            <span class="tag primary">全局</span>
+            <span class="tag outline">12 次被引用</span>
+          </div>
+        </div>
+        <div class="tpl-card">
+          <div class="head">
+            <div class="ic" style="background:#6366f1">HM</div>
+            <div><div class="name">HashMapGet</div><div class="sub">tpl_hmap · v3</div></div>
+          </div>
+          <div class="desc">内存 hashmap 取值,支持多键组合。</div>
+          <div class="meta-row">
+            <span class="tag success"><span class="dot"></span>py</span>
+            <span class="tag primary">全局</span>
+          </div>
+        </div>
+        <div class="tpl-card">
+          <div class="head">
+            <div class="ic" style="background:#6366f1">RS</div>
+            <div><div class="name">RangeSearch</div><div class="sub">tpl_range · v2</div></div>
+          </div>
+          <div class="desc">范围扫描,可设 limit、排序字段。</div>
+          <div class="meta-row">
+            <span class="tag violet"><span class="dot"></span>llm</span>
+            <span class="tag">我的私有</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="category-head"><span class="dot" style="background:#10b981"></span>校验 <span class="c">· 4 个模板</span></div>
+      <div class="tpl-grid">
+        <div class="tpl-card" onclick="location.href='template-editor.html'">
+          <div class="head">
+            <div class="ic" style="background:#10b981">HC</div>
+            <div><div class="name">HashCheck</div><div class="sub">tpl_hashcheck · v3</div></div>
+          </div>
+          <div class="desc">校验报文 hash 与预期一致,支持 sha256 / md5 / blake3。</div>
+          <div class="meta-row">
+            <span class="tag success"><span class="dot"></span>py</span>
+            <span class="tag primary">全局</span>
+            <span class="tag warning">草稿 v4</span>
+          </div>
+        </div>
+        <div class="tpl-card">
+          <div class="head">
+            <div class="ic" style="background:#10b981">SV</div>
+            <div><div class="name">SchemaValidate</div><div class="sub">tpl_schema · v5</div></div>
+          </div>
+          <div class="desc">按 JSON Schema 校验载荷结构。</div>
+          <div class="meta-row"><span class="tag success"><span class="dot"></span>py</span><span class="tag primary">全局</span></div>
+        </div>
+        <div class="tpl-card">
+          <div class="head">
+            <div class="ic" style="background:#10b981">SG</div>
+            <div><div class="name">SignCheck</div><div class="sub">tpl_sign · v1</div></div>
+          </div>
+          <div class="desc">RSA / ECDSA 数字签名验证。</div>
+          <div class="meta-row"><span class="tag violet"><span class="dot"></span>llm</span><span class="tag primary">全局</span></div>
+        </div>
+      </div>
+
+      <div class="category-head"><span class="dot" style="background:#8b5cf6"></span>分流 <span class="c">· 3 个模板</span></div>
+      <div class="tpl-grid">
+        <div class="tpl-card">
+          <div class="head">
+            <div class="ic" style="background:#8b5cf6">BF</div>
+            <div><div class="name">BranchByField</div><div class="sub">tpl_branch · v4</div></div>
+          </div>
+          <div class="desc">按字段值在多条出边间分发,出边语义由 edge_semantics 决定。</div>
+          <div class="meta-row"><span class="tag success"><span class="dot"></span>py</span><span class="tag primary">全局</span></div>
+        </div>
+        <div class="tpl-card">
+          <div class="head">
+            <div class="ic" style="background:#8b5cf6">CG</div>
+            <div><div class="name">ConditionGate</div><div class="sub">tpl_gate · v1</div></div>
+          </div>
+          <div class="desc">布尔表达式门控,true/false 两路。</div>
+          <div class="meta-row"><span class="tag violet"><span class="dot"></span>llm</span><span class="tag">我的私有</span></div>
+        </div>
+      </div>
+
+      <div class="category-head"><span class="dot" style="background:#f59e0b"></span>动作 <span class="c">· 5 个模板</span></div>
+      <div class="tpl-grid">
+        <div class="tpl-card">
+          <div class="head">
+            <div class="ic" style="background:#f59e0b">WK</div>
+            <div><div class="name">WriteKafka</div><div class="sub">tpl_wkafka · v2</div></div>
+          </div>
+          <div class="desc">写入指定 Kafka topic,支持批量。</div>
+          <div class="meta-row"><span class="tag violet"><span class="dot"></span>llm</span><span class="tag primary">全局</span></div>
+        </div>
+        <div class="tpl-card">
+          <div class="head">
+            <div class="ic" style="background:#ef4444">DL</div>
+            <div><div class="name">DeadLetter</div><div class="sub">tpl_dlq · v2</div></div>
+          </div>
+          <div class="desc">进死信队列,记录原因、原报文。</div>
+          <div class="meta-row"><span class="tag success"><span class="dot"></span>py</span><span class="tag primary">全局</span></div>
+        </div>
+        <div class="tpl-card">
+          <div class="head">
+            <div class="ic" style="background:#f59e0b">RT</div>
+            <div><div class="name">Retry</div><div class="sub">tpl_retry · v3</div></div>
+          </div>
+          <div class="desc">指数退避重试,最大 N 次。</div>
+          <div class="meta-row"><span class="tag violet"><span class="dot"></span>llm</span><span class="tag">我的私有</span></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>级跳设计平台 · 前端原型导航</title>
+<link rel="stylesheet" href="assets/common.css">
+<style>
+  body { background: linear-gradient(180deg, #0b1020 0%, #1a2447 100%); min-height: 100vh; color: #e2e8f0; }
+  .hero {
+    max-width: 1200px; margin: 0 auto; padding: 64px 32px 32px;
+  }
+  .hero h1 {
+    font-size: 34px; font-weight: 700; margin: 0 0 8px;
+    background: linear-gradient(135deg, #a5b4fc, #f9a8d4);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .hero p { margin: 0 0 8px; color: #94a3b8; font-size: 14px; }
+  .hero .meta {
+    display: flex; gap: 16px; margin-top: 16px; flex-wrap: wrap;
+  }
+  .hero .meta .pill {
+    background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1);
+    border-radius: 999px; padding: 4px 12px; font-size: 12px; color: #cbd5e1;
+  }
+  .grid {
+    max-width: 1200px; margin: 0 auto; padding: 16px 32px 64px;
+    display: grid; gap: 20px;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  }
+  .card-link {
+    background: #fff; color: var(--text);
+    border-radius: 14px; overflow: hidden;
+    transition: transform .2s, box-shadow .2s;
+    display: flex; flex-direction: column;
+    box-shadow: 0 8px 24px rgba(0,0,0,.25);
+  }
+  .card-link:hover { transform: translateY(-3px); box-shadow: 0 14px 36px rgba(99,102,241,.35); }
+  .card-link .thumb {
+    aspect-ratio: 16/10;
+    background: var(--surface-2);
+    position: relative;
+    overflow: hidden;
+    border-bottom: 1px solid var(--border);
+  }
+  .card-link .body { padding: 14px 16px 16px; }
+  .card-link h3 { font-size: 14px; font-weight: 600; margin: 0 0 4px; display: flex; align-items: center; gap: 6px; }
+  .card-link p { font-size: 12px; color: var(--text-muted); margin: 0; line-height: 1.45; }
+  .card-link .badge {
+    font-size: 10px; font-weight: 600;
+    background: var(--primary-soft); color: var(--primary);
+    padding: 1px 6px; border-radius: 4px; text-transform: uppercase; letter-spacing: .5px;
+  }
+  /* Thumb art — each page gets a little SVG preview */
+  .thumb.graph-list { background:
+    linear-gradient(180deg,#fff 0,#fff 24px,#f6f7fb 24px,#f6f7fb 100%); }
+  .thumb.graph-list::before {
+    content: ''; position: absolute; inset: 32px 24px; background:
+      repeating-linear-gradient(180deg,#e2e8f0 0 1px,transparent 1px 40px),
+      linear-gradient(90deg,#6366f1 0 4px,transparent 4px);
+    border-radius: 6px;
+  }
+  .thumb.canvas {
+    background: radial-gradient(circle at 30% 40%, rgba(99,102,241,.1), transparent 60%),
+                radial-gradient(circle at 80% 60%, rgba(139,92,246,.1), transparent 60%),
+                #fff;
+    background-size: 18px 18px, 100% 100%, 100% 100%;
+  }
+  .thumb.canvas svg { width: 100%; height: 100%; }
+  .thumb.tpl {
+    background: linear-gradient(180deg,#fff,#f6f7fb);
+  }
+  .note {
+    max-width: 1200px; margin: 0 auto 64px; padding: 0 32px;
+    color: #94a3b8; font-size: 12px; line-height: 1.6;
+    background: rgba(255,255,255,.04); border-radius: 12px;
+    padding: 16px 20px;
+    border: 1px solid rgba(255,255,255,.08);
+  }
+  .note strong { color: #e2e8f0; }
+  .note kbd { background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.2); color: #e2e8f0; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <h1>级跳设计平台 · 前端原型</h1>
+  <p>Vue 3 + Pinia + Vite + antv X6。后端已有 00–07 实施文档,本页是前端 UI 的高保真视觉契约。</p>
+  <div class="meta">
+    <span class="pill">11 个页面</span>
+    <span class="pill">antv X6 画布</span>
+    <span class="pill">无前端鉴权(后端装饰器判)</span>
+    <span class="pill">大 JSON 进 / 大 JSON 出</span>
+  </div>
+</div>
+
+<div class="grid">
+
+  <a class="card-link" href="pages/graph-list.html">
+    <div class="thumb graph-list"></div>
+    <div class="body">
+      <h3>图列表 <span class="badge">核心</span></h3>
+      <p>CascadeGraph 列表,展示最近改动 / 版本 / 最近一次 Run 状态,支持新建、搜索、归档。</p>
+    </div>
+  </a>
+
+  <a class="card-link" href="pages/canvas-editor.html">
+    <div class="thumb canvas">
+      <svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
+        <rect x="20" y="40" width="60" height="28" rx="6" fill="#eef2ff" stroke="#6366f1"/>
+        <rect x="120" y="30" width="80" height="50" rx="8" fill="#f5f3ff" stroke="#8b5cf6" stroke-dasharray="4 3"/>
+        <rect x="130" y="42" width="30" height="12" rx="3" fill="#8b5cf6"/>
+        <rect x="168" y="42" width="25" height="12" rx="3" fill="#c4b5fd"/>
+        <rect x="130" y="60" width="60" height="12" rx="3" fill="#ddd6fe"/>
+        <rect x="230" y="35" width="60" height="28" rx="6" fill="#ecfdf5" stroke="#10b981"/>
+        <rect x="60" y="130" width="60" height="28" rx="6" fill="#fef2f2" stroke="#ef4444"/>
+        <rect x="180" y="140" width="80" height="28" rx="6" fill="#ecfeff" stroke="#06b6d4"/>
+        <path d="M80 54 L120 54" stroke="#6366f1" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+        <path d="M200 54 L230 49" stroke="#6366f1" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+        <path d="M160 80 Q160 110 160 140" stroke="#6366f1" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+        <path d="M90 68 L90 130" stroke="#6366f1" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+        <defs><marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+          <path d="M0,0 L10,5 L0,10 z" fill="#6366f1"/></marker></defs>
+      </svg>
+    </div>
+    <div class="body">
+      <h3>画布编辑器 <span class="badge">核心</span></h3>
+      <p>antv X6 真实交互。左侧节点库,中间自动布局的 bundle + 游离节点 + 跨 bundle 边,右侧属性面板。</p>
+    </div>
+  </a>
+
+  <a class="card-link" href="pages/template-editor.html">
+    <div class="thumb tpl">
+      <svg viewBox="0 0 320 200">
+        <rect x="16" y="16" width="120" height="10" rx="2" fill="#0f172a"/>
+        <rect x="16" y="34" width="80" height="6" rx="2" fill="#94a3b8"/>
+        <rect x="16" y="60" width="200" height="32" rx="6" fill="#f6f7fb" stroke="#e5e7eb"/>
+        <rect x="16" y="100" width="200" height="32" rx="6" fill="#f6f7fb" stroke="#e5e7eb"/>
+        <rect x="16" y="140" width="200" height="44" rx="6" fill="#0f172a"/>
+        <rect x="24" y="150" width="30" height="5" fill="#c084fc"/>
+        <rect x="58" y="150" width="60" height="5" fill="#86efac"/>
+        <rect x="24" y="162" width="40" height="5" fill="#fbbf24"/>
+        <rect x="24" y="172" width="100" height="5" fill="#e2e8f0"/>
+        <rect x="232" y="60" width="72" height="120" rx="6" fill="#eef2ff"/>
+        <rect x="240" y="72" width="40" height="6" fill="#6366f1"/>
+        <rect x="240" y="86" width="56" height="4" fill="#a5b4fc"/>
+        <rect x="240" y="96" width="48" height="4" fill="#a5b4fc"/>
+      </svg>
+    </div>
+    <div class="body">
+      <h3>节点模板编辑器</h3>
+      <p>元模板驱动表单 · description / input_schema / output_schema / edge_semantics,右侧实时 JSON 预览。</p>
+    </div>
+  </a>
+
+  <a class="card-link" href="pages/template-library.html">
+    <div class="thumb tpl">
+      <svg viewBox="0 0 320 200">
+        <rect x="16" y="16" width="288" height="28" rx="6" fill="#f6f7fb"/>
+        <circle cx="32" cy="30" r="6" fill="#6366f1"/>
+        <rect x="44" y="26" width="100" height="8" rx="2" fill="#94a3b8"/>
+        <g>
+          <rect x="16" y="56" width="88" height="60" rx="6" fill="#fff" stroke="#e5e7eb"/>
+          <rect x="24" y="64" width="30" height="10" rx="2" fill="#6366f1"/>
+          <rect x="24" y="80" width="60" height="5" fill="#cbd5e1"/>
+          <rect x="24" y="90" width="50" height="5" fill="#cbd5e1"/>
+        </g>
+        <g transform="translate(100,0)">
+          <rect x="16" y="56" width="88" height="60" rx="6" fill="#fff" stroke="#e5e7eb"/>
+          <rect x="24" y="64" width="30" height="10" rx="2" fill="#10b981"/>
+          <rect x="24" y="80" width="60" height="5" fill="#cbd5e1"/>
+          <rect x="24" y="90" width="50" height="5" fill="#cbd5e1"/>
+        </g>
+        <g transform="translate(200,0)">
+          <rect x="16" y="56" width="88" height="60" rx="6" fill="#fff" stroke="#e5e7eb"/>
+          <rect x="24" y="64" width="30" height="10" rx="2" fill="#8b5cf6"/>
+          <rect x="24" y="80" width="60" height="5" fill="#cbd5e1"/>
+          <rect x="24" y="90" width="50" height="5" fill="#cbd5e1"/>
+        </g>
+        <g transform="translate(0,70)">
+          <rect x="16" y="56" width="88" height="60" rx="6" fill="#fff" stroke="#e5e7eb"/>
+          <rect x="24" y="64" width="30" height="10" rx="2" fill="#f59e0b"/>
+          <rect x="24" y="80" width="60" height="5" fill="#cbd5e1"/>
+        </g>
+        <g transform="translate(100,70)">
+          <rect x="16" y="56" width="88" height="60" rx="6" fill="#fff" stroke="#e5e7eb"/>
+          <rect x="24" y="64" width="30" height="10" rx="2" fill="#06b6d4"/>
+          <rect x="24" y="80" width="60" height="5" fill="#cbd5e1"/>
+        </g>
+      </svg>
+    </div>
+    <div class="body">
+      <h3>节点模板库</h3>
+      <p>按分类浏览全部节点模板,显示 engine、owner、版本数;设计人员入口(私有)+ admin 入口(全局)。</p>
+    </div>
+  </a>
+
+  <a class="card-link" href="pages/scenarios.html">
+    <div class="thumb tpl">
+      <svg viewBox="0 0 320 200">
+        <rect x="16" y="16" width="140" height="168" rx="6" fill="#0f172a"/>
+        <rect x="164" y="16" width="140" height="168" rx="6" fill="#0f172a"/>
+        <rect x="24" y="28" width="50" height="6" fill="#86efac"/>
+        <rect x="24" y="40" width="90" height="5" fill="#e2e8f0"/>
+        <rect x="32" y="52" width="70" height="5" fill="#fbbf24"/>
+        <rect x="32" y="62" width="80" height="5" fill="#86efac"/>
+        <rect x="172" y="28" width="70" height="6" fill="#86efac"/>
+        <rect x="172" y="40" width="90" height="5" fill="#e2e8f0"/>
+        <rect x="180" y="52" width="60" height="5" fill="#fbbf24"/>
+        <rect x="180" y="62" width="90" height="5" fill="#86efac"/>
+      </svg>
+    </div>
+    <div class="body">
+      <h3>场景编辑器</h3>
+      <p>两列 JSON 编辑器:input / expected_output。多场景,一键触发 Phase1-only 或完整流水线。</p>
+    </div>
+  </a>
+
+  <a class="card-link" href="pages/run-list.html">
+    <div class="thumb graph-list"></div>
+    <div class="body">
+      <h3>Run 列表</h3>
+      <p>按图 / 状态筛选,展示 pipeline variant、耗时、阶段进度条。实时 WS 更新。</p>
+    </div>
+  </a>
+
+  <a class="card-link" href="pages/run-detail.html">
+    <div class="thumb tpl">
+      <svg viewBox="0 0 320 200">
+        <rect x="16" y="16" width="288" height="24" rx="6" fill="#ecfdf5"/>
+        <circle cx="28" cy="28" r="4" fill="#10b981"/>
+        <rect x="40" y="24" width="80" height="8" fill="#064e3b"/>
+        <circle cx="40" cy="60" r="8" fill="#10b981"/>
+        <line x1="40" y1="68" x2="40" y2="100" stroke="#10b981" stroke-width="2"/>
+        <circle cx="40" cy="108" r="8" fill="#10b981"/>
+        <line x1="40" y1="116" x2="40" y2="148" stroke="#06b6d4" stroke-width="2"/>
+        <circle cx="40" cy="156" r="8" fill="#06b6d4"/>
+        <rect x="60" y="54" width="240" height="14" rx="3" fill="#f6f7fb"/>
+        <rect x="60" y="102" width="200" height="14" rx="3" fill="#f6f7fb"/>
+        <rect x="60" y="150" width="180" height="14" rx="3" fill="#ecfeff"/>
+      </svg>
+    </div>
+    <div class="body">
+      <h3>Run 详情 · 三阶段时间线 <span class="badge">核心</span></h3>
+      <p>Phase1 (结构 + 场景) / Phase2 (代码) / Phase3 (沙箱) 时间线 + 每步 trace + LLM 归因。</p>
+    </div>
+  </a>
+
+  <a class="card-link" href="pages/code-diff.html">
+    <div class="thumb tpl">
+      <svg viewBox="0 0 320 200">
+        <rect width="320" height="200" fill="#fff"/>
+        <rect x="16" y="16" width="288" height="20" rx="4" fill="#f6f7fb"/>
+        <rect x="16" y="44" width="140" height="140" rx="4" fill="#fef2f2"/>
+        <rect x="164" y="44" width="140" height="140" rx="4" fill="#ecfdf5"/>
+        <rect x="24" y="56" width="100" height="5" fill="#ef4444"/>
+        <rect x="24" y="68" width="80" height="5" fill="#7f1d1d"/>
+        <rect x="172" y="56" width="100" height="5" fill="#10b981"/>
+        <rect x="172" y="68" width="110" height="5" fill="#14532d"/>
+        <rect x="172" y="80" width="90" height="5" fill="#14532d"/>
+      </svg>
+    </div>
+    <div class="body">
+      <h3>代码 diff</h3>
+      <p>Phase2 产物与上一次快照的 unified diff。左侧文件树,右侧 diff2html 渲染。</p>
+    </div>
+  </a>
+
+  <a class="card-link" href="pages/review.html">
+    <div class="thumb tpl">
+      <svg viewBox="0 0 320 200">
+        <rect x="16" y="16" width="180" height="168" rx="6" fill="#fff" stroke="#e5e7eb"/>
+        <rect x="204" y="16" width="100" height="168" rx="6" fill="#f6f7fb"/>
+        <rect x="212" y="28" width="60" height="6" fill="#0f172a"/>
+        <rect x="212" y="42" width="80" height="44" rx="4" fill="#fff" stroke="#e5e7eb"/>
+        <rect x="212" y="92" width="80" height="44" rx="4" fill="#fff" stroke="#e5e7eb"/>
+        <rect x="212" y="142" width="80" height="32" rx="4" fill="#eef2ff"/>
+        <rect x="24" y="28" width="80" height="8" fill="#0f172a"/>
+        <rect x="24" y="50" width="100" height="5" fill="#94a3b8"/>
+        <rect x="24" y="60" width="120" height="5" fill="#94a3b8"/>
+        <circle cx="30" cy="92" r="4" fill="#f59e0b"/>
+        <rect x="40" y="88" width="60" height="5" fill="#0f172a"/>
+        <rect x="40" y="98" width="80" height="4" fill="#94a3b8"/>
+      </svg>
+    </div>
+    <div class="body">
+      <h3>Review</h3>
+      <p>复核人员对图 / 代码逐节点评论,线程式对话,批准/打回按钮。</p>
+    </div>
+  </a>
+
+  <a class="card-link" href="pages/no-permission.html">
+    <div class="thumb tpl" style="background:linear-gradient(135deg,#fef2f2,#fff1f2);display:grid;place-items:center">
+      <svg viewBox="0 0 80 80" width="80" height="80">
+        <circle cx="40" cy="40" r="32" fill="#fee2e2"/>
+        <path d="M25 40 L35 50 L55 30" stroke="#ef4444" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div class="body">
+      <h3>无权限 / 错误态</h3>
+      <p>403 / 500 / 网络错误的统一兜底页。后端装饰器决定真正鉴权,前端只负责展示。</p>
+    </div>
+  </a>
+
+</div>
+
+<div class="note">
+  <strong>使用方式:</strong>直接在浏览器里打开本页(<code>impl-docs-frontend/index.html</code>),点击卡片进入每个页面。
+  画布编辑器页面使用 antv X6 CDN,可以真实拖拽连线;其他页面是静态高保真视觉。
+  需要离线可在 assets 目录下缓存 CDN 资源,但默认走 unpkg。
+  <br><br>
+  <strong>页面 / 后端 API 对应:</strong>
+  图列表 ↔ <code>GET /api/graphs</code>;画布 ↔ <code>GET/POST/PUT /api/graphs/:id/versions</code>;
+  节点模板编辑器 ↔ <code>POST /api/node-templates</code> 或 <code>/api/admin/node-templates</code>;
+  场景 ↔ <code>POST /api/runs { scenarios, variant }</code>;Run 详情 ↔ <code>GET /api/runs/:id</code> + WS。
+  所有鉴权返回 <code>401/403</code> 统一跳 <strong>无权限页</strong>。
+</div>
+
+</body>
+</html>

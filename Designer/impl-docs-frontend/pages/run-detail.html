@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Run 详情 · 级跳</title>
+<link rel="stylesheet" href="../assets/common.css">
+<style>
+  .app {
+    grid-template-columns: 56px 320px 1fr 360px;
+    grid-template-areas:
+      "topbar topbar topbar topbar"
+      "sidebar timeline step trace";
+  }
+  .run-meta {
+    padding: 12px 20px; background: #fff;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 24px;
+    grid-column: 2 / 5; height: 72px; box-sizing: border-box;
+  }
+
+  .timeline-pane { background: var(--surface-2); border-right: 1px solid var(--border); overflow-y: auto; padding: 12px 16px; }
+  .phase {
+    background: #fff; border: 1px solid var(--border); border-radius: var(--radius);
+    margin-bottom: 10px; padding: 12px 14px;
+  }
+  .phase.current { border-color: var(--primary); box-shadow: 0 4px 12px rgba(99,102,241,.15); }
+  .phase .ph-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .phase .ph-head .num {
+    width: 26px; height: 26px; border-radius: 50%;
+    display: grid; place-items: center; color: #fff; font-size: 12px; font-weight: 600;
+    background: var(--success);
+  }
+  .phase.running .ph-head .num { background: var(--info); animation: pulse 1.6s infinite; }
+  .phase.pending .ph-head .num { background: var(--text-dim); }
+  .phase.failed .ph-head .num { background: var(--danger); }
+  .phase .ph-head .title { font-weight: 600; font-size: 13px; }
+  .phase .ph-head .dur { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--text-muted); }
+  .phase .steps { display: flex; flex-direction: column; gap: 4px; padding-left: 8px; border-left: 2px dashed var(--border); margin-left: 13px; }
+  .phase .step {
+    padding: 6px 10px; border-radius: var(--radius-sm);
+    font-size: 12px; display: flex; align-items: center; gap: 8px;
+    cursor: pointer;
+  }
+  .phase .step:hover { background: var(--surface-2); }
+  .phase .step.active { background: var(--primary-soft); color: var(--primary); font-weight: 500; }
+  .phase .step .nm { flex: 1; }
+  .phase .step .t { font-family: var(--mono); font-size: 10px; color: var(--text-dim); }
+
+  .step-pane { overflow: auto; padding: 20px 24px; background: var(--surface-2); }
+  .step-pane .card {
+    margin-bottom: 14px;
+    background: #fff;
+  }
+  .card .h { display: flex; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  .card .h strong { font-size: 14px; }
+  .card .h .r { margin-left: auto; }
+  .card .b { padding: 14px 16px; }
+
+  .handler-row {
+    display: grid; grid-template-columns: 28px 1fr auto; gap: 10px;
+    padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    margin-bottom: 8px; align-items: center;
+  }
+  .handler-row .idx { width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center; color: #fff; font-size: 11px; font-weight: 600; background: var(--success); }
+  .handler-row .idx.pending { background: var(--text-dim); }
+  .handler-row .idx.failed { background: var(--danger); }
+  .handler-row .idx.running { background: var(--info); animation: pulse 1.6s infinite; }
+  .handler-row .name { font-weight: 500; font-size: 13px; }
+  .handler-row .sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+  /* Scenario run: conversation view */
+  .convo { display: flex; flex-direction: column; gap: 10px; }
+  .msg {
+    display: grid; grid-template-columns: 28px 1fr; gap: 10px;
+  }
+  .msg .ic {
+    width: 28px; height: 28px; border-radius: 50%;
+    display: grid; place-items: center; color: #fff; font-size: 11px; font-weight: 700;
+  }
+  .msg.llm .ic { background: linear-gradient(135deg, var(--primary), var(--violet)); }
+  .msg.tool .ic { background: var(--success); }
+  .msg.system .ic { background: var(--text-dim); }
+  .msg .bubble { background: #fff; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; font-size: 12px; }
+  .msg.llm .bubble { background: var(--primary-soft); border-color: rgba(99,102,241,.2); }
+  .msg.tool .bubble { background: var(--success-soft); border-color: rgba(16,185,129,.2); }
+  .msg .who { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
+  .msg .pre { font-family: var(--mono); font-size: 11px; line-height: 1.5; white-space: pre-wrap; word-break: break-all; }
+
+  /* diff view */
+  .diff-mini {
+    font-family: var(--mono); font-size: 12px; line-height: 1.6;
+    background: var(--surface-2); border-radius: var(--radius-sm);
+    padding: 8px 12px;
+  }
+  .diff-mini .minus { background: #fee2e2; color: #7f1d1d; display: block; padding: 0 4px; }
+  .diff-mini .plus { background: #dcfce7; color: #14532d; display: block; padding: 0 4px; }
+
+  /* verdict banner */
+  .verdict {
+    padding: 14px 18px; border-radius: var(--radius); margin-bottom: 14px;
+    display: flex; align-items: center; gap: 14px;
+  }
+  .verdict.ok { background: var(--success-soft); border: 1px solid rgba(16,185,129,.2); color: #065f46; }
+  .verdict.fail { background: var(--danger-soft); border: 1px solid rgba(239,68,68,.2); color: #7f1d1d; }
+  .verdict .big { font-size: 22px; font-weight: 600; }
+  .verdict .txt .l { font-size: 12px; opacity: .7; }
+
+  /* trace pane */
+  .trace-pane { background: #fff; border-left: 1px solid var(--border); overflow: hidden; display: flex; flex-direction: column; }
+  .trace-pane .h { padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 13px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; }
+  .trace-list { overflow-y: auto; flex: 1; padding: 4px 0; }
+  .trace-evt {
+    padding: 8px 14px;
+    border-left: 3px solid var(--border);
+    display: grid; grid-template-columns: auto 1fr; gap: 8px; font-size: 11px;
+  }
+  .trace-evt:hover { background: var(--surface-2); }
+  .trace-evt.info { border-left-color: var(--info); }
+  .trace-evt.success { border-left-color: var(--success); }
+  .trace-evt.warning { border-left-color: var(--warning); }
+  .trace-evt.error { border-left-color: var(--danger); }
+  .trace-evt .t { font-family: var(--mono); color: var(--text-dim); font-size: 10px; }
+  .trace-evt .ev { color: var(--text); }
+  .trace-evt .ev strong { font-weight: 500; }
+
+  .attribution {
+    margin: 10px 14px; padding: 10px 12px; border-radius: var(--radius-sm);
+    background: var(--warning-soft); border: 1px solid rgba(245,158,11,.2);
+    font-size: 12px; color: #92400e;
+  }
+  .attribution .ttl { font-weight: 600; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="logo"><span class="logo-mark">级</span><span>级跳</span></div>
+    <div class="breadcrumb">
+      <a href="run-list.html">运行记录</a><span class="sep">/</span>
+      <strong>r_91a7c22d</strong>
+      <span class="tag success" style="margin-left:8px"><span class="dot"></span>Phase3 通过</span>
+    </div>
+    <div class="spacer"></div>
+    <div class="actions">
+      <button class="btn sm">复制链接</button>
+      <button class="btn sm">重跑</button>
+      <button class="btn sm">导出 trace</button>
+      <div class="user"><div class="avatar">YZ</div>杨震</div>
+    </div>
+  </div>
+
+  <nav class="sidebar-nav">
+    <a class="nav-item" href="graph-list.html"><svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/></svg><span class="tip">图列表</span></a>
+    <a class="nav-item active"><svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg><span class="tip">运行</span></a>
+  </nav>
+
+  <div class="run-meta">
+    <div>
+      <div class="muted" style="font-size:11px">图 · 版本</div>
+      <div style="font-weight:600">报文处理主流水线 · <span class="muted">gv_3f8e · v17</span></div>
+    </div>
+    <div>
+      <div class="muted" style="font-size:11px">Pipeline</div>
+      <div><span class="tag primary">FULL · 完整三阶段</span></div>
+    </div>
+    <div>
+      <div class="muted" style="font-size:11px">场景</div>
+      <div>5 / 5 <span class="tag success" style="font-size:10px">全部通过</span></div>
+    </div>
+    <div>
+      <div class="muted" style="font-size:11px">发起人</div>
+      <div>杨震 · <span class="muted">2026-04-18 10:02:33</span></div>
+    </div>
+    <div>
+      <div class="muted" style="font-size:11px">总耗时</div>
+      <div class="mono" style="font-weight:600">4m 22s</div>
+    </div>
+  </div>
+
+  <aside class="timeline-pane">
+    <div class="phase">
+      <div class="ph-head">
+        <div class="num">1</div>
+        <div class="title">Phase1 · JSON 层验证</div>
+        <div class="dur">18s</div>
+      </div>
+      <div class="steps">
+        <div class="step">
+          <span class="status-dot success"></span>
+          <span class="nm">structure_check</span>
+          <span class="t">0.2s</span>
+        </div>
+        <div class="step active">
+          <span class="status-dot success"></span>
+          <span class="nm">scenario_run</span>
+          <span class="t">17s</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="ph-head">
+        <div class="num">2</div>
+        <div class="title">Phase2 · 代码生成</div>
+        <div class="dur">46s</div>
+      </div>
+      <div class="steps">
+        <div class="step">
+          <span class="status-dot success"></span>
+          <span class="nm">code_planner</span>
+          <span class="t">3s</span>
+        </div>
+        <div class="step">
+          <span class="status-dot success"></span>
+          <span class="nm">code_generator</span>
+          <span class="t">42s</span>
+        </div>
+        <div class="step">
+          <span class="status-dot success"></span>
+          <span class="nm">code_assembler</span>
+          <span class="t">1s</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="phase current">
+      <div class="ph-head">
+        <div class="num">3</div>
+        <div class="title">Phase3 · 沙箱执行</div>
+        <div class="dur">3m 18s</div>
+      </div>
+      <div class="steps">
+        <div class="step"><span class="status-dot success"></span><span class="nm">outer_static</span><span class="t">4s</span></div>
+        <div class="step"><span class="status-dot success"></span><span class="nm">compile · cmake+ninja</span><span class="t">2m 12s</span></div>
+        <div class="step"><span class="status-dot success"></span><span class="nm">outer_scenario_synth</span><span class="t">11s</span></div>
+        <div class="step"><span class="status-dot success"></span><span class="nm">exec · 5 scenarios</span><span class="t">46s</span></div>
+        <div class="step"><span class="status-dot success"></span><span class="nm">outer_dynamic_reflector</span><span class="t">5s</span></div>
+      </div>
+    </div>
+  </aside>
+
+  <main class="step-pane">
+    <div class="verdict ok">
+      <div class="big">✓</div>
+      <div class="txt grow">
+        <div class="l">Phase1 / scenario_run</div>
+        <div><strong>通过 · 5 场景全部匹配</strong>,字段级 deep_equal</div>
+      </div>
+      <div class="mono muted">trace_id: 01JRK3F7H...</div>
+    </div>
+
+    <div class="card">
+      <div class="h">
+        <strong>ScenarioRunHandler · 责任链第 2 个 Handler</strong>
+        <div class="r">
+          <span class="tag violet">LLM 驱动</span>
+          <span class="tag outline">handler_order = 2</span>
+        </div>
+      </div>
+      <div class="b">
+        <div class="handler-row">
+          <div class="idx">1</div>
+          <div>
+            <div class="name">structure_check</div>
+            <div class="sub">纯 Python · 调 DesignValidator · 无环、字段齐、边语义合法</div>
+          </div>
+          <span class="tag success">通过</span>
+        </div>
+        <div class="handler-row" style="border-color: var(--primary); box-shadow: 0 2px 8px rgba(99,102,241,.1)">
+          <div class="idx">2</div>
+          <div>
+            <div class="name">scenario_run · 当前查看</div>
+            <div class="sub">agent_loop + tool-call · 跑 5 场景 · deep_equal 判定</div>
+          </div>
+          <span class="tag success">5/5 通过</span>
+        </div>
+        <div class="handler-row">
+          <div class="idx pending">+</div>
+          <div>
+            <div class="name" style="color:var(--text-dim)">可插拔:覆盖率 / 不变量 / 规约反思 ...</div>
+            <div class="sub">新增 Handler = 加个类,框架不变</div>
+          </div>
+          <span class="tag outline">未配置</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="h">
+        <strong>场景 · sc_1a2b3c 正常报文 · hash 匹配</strong>
+        <div class="r"><span class="tag success">ok</span></div>
+      </div>
+      <div class="b">
+        <div class="convo">
+          <div class="msg system">
+            <div class="ic">S</div>
+            <div class="bubble">
+              <div class="who">system · 森林结构 + 全局边 + 每种模板 description</div>
+              <div class="pre">bundles: [bnd_verify, bnd_dispatch]
+free_nodes: [n_freed001, n_7a01ef11]
+edges: 7 条(2 条跨 bundle)
+tools: IndexTableLookup, HashCheck, SchemaValidate, BranchByField, WriteKafka, DeadLetter ...</div>
+            </div>
+          </div>
+          <div class="msg llm">
+            <div class="ic">AI</div>
+            <div class="bubble">
+              <div class="who">assistant · 驱动者</div>
+              <div class="pre">根据入度 0 的节点,从 ParseHeader (n_aa11bb22) 开始。我需要调用第一个模拟器。</div>
+              <div style="margin-top:6px"><span class="tag primary">tool_call</span> run_simulator(instance_id="n_aa11bb22", input_json=...)</div>
+            </div>
+          </div>
+          <div class="msg tool">
+            <div class="ic">T</div>
+            <div class="bubble">
+              <div class="who">tool · ParseHeaderSimulator</div>
+              <div class="pre">{ "parsed": { "trade_id": "t_88201", "amount": 12850, ... }, "header": {...} }</div>
+            </div>
+          </div>
+          <div class="msg llm">
+            <div class="ic">AI</div>
+            <div class="bubble">
+              <div class="who">assistant</div>
+              <div class="pre">沿 edge e_12 走到 n_2d91ab03 (HashCheck)。</div>
+              <div style="margin-top:6px"><span class="tag primary">tool_call</span> run_simulator(instance_id="n_2d91ab03", input_json=...)</div>
+            </div>
+          </div>
+          <div class="msg tool">
+            <div class="ic">T</div>
+            <div class="bubble">
+              <div class="who">tool · HashCheckSimulator</div>
+              <div class="pre">{ "match": true, "computed_hash": "a3f4b2c7e1d9..." }</div>
+            </div>
+          </div>
+          <div class="msg system">
+            <div class="ic">…</div>
+            <div class="bubble">
+              <div class="who">(略过 SchemaValidate / BranchByField / WriteKafka 三步)</div>
+            </div>
+          </div>
+          <div class="msg llm">
+            <div class="ic">AI</div>
+            <div class="bubble">
+              <div class="who">assistant · 判定</div>
+              <div class="pre">森林执行完毕。actual_output:
+{ "verdict": "ok", "path": [...], "sink_output": { "topic": "trade.inbound.clean", "partition_key": "t_88201", "bytes": 387 }, "side_effects": {...} }
+
+与 expected_output_json deep_equal → ✓ 通过</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="h">
+        <strong>deep_equal 对比(示例:另一场景上一次失败)</strong>
+        <div class="r"><span class="tag danger">diff</span></div>
+      </div>
+      <div class="b">
+        <div class="diff-mini">
+          <span>  "verdict": "ok",</span><br>
+          <span>  "path": [...],</span><br>
+          <span>  "sink_output": {</span><br>
+          <span class="minus">-    "topic": "trade.dlq",</span>
+          <span class="plus">+    "topic": "trade.inbound.clean",</span>
+          <span class="minus">-    "partition_key": "unknown"</span>
+          <span class="plus">+    "partition_key": "t_88201"</span>
+          <span>  }</span>
+        </div>
+
+        <div class="attribution">
+          <div class="ttl">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="10"/></svg>
+            LLM 归因 · design_bug
+          </div>
+          <div>BranchByField(n_7c22aa11) 的 <span class="mono">on_success</span> 出边指向了 <span class="mono">DeadLetter</span>。按语义应指向 <span class="mono">WriteKafka</span>。建议在画布上修正此边。</div>
+          <div class="muted" style="margin-top:6px;font-size:11px">注:归因仅写 trace,不改路由。真实的 verdict 由 deep_equal 决定。</div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <aside class="trace-pane">
+    <div class="h">
+      <span>trace 事件流</span>
+      <div>
+        <button class="btn ghost sm">筛选</button>
+        <button class="btn ghost sm">导出</button>
+      </div>
+    </div>
+    <div class="trace-list">
+      <div class="trace-evt info"><span class="t">10:02:33.004</span><div class="ev"><strong>run.created</strong> · r_91a7c22d · variant=FULL</div></div>
+      <div class="trace-evt info"><span class="t">10:02:33.158</span><div class="ev"><strong>phase1.enter</strong></div></div>
+      <div class="trace-evt success"><span class="t">10:02:33.212</span><div class="ev"><strong>structure_check.pass</strong> · 7 nodes, 8 edges, 2 bundles</div></div>
+      <div class="trace-evt info"><span class="t">10:02:33.315</span><div class="ev"><strong>scenario_run.start</strong> · 5 scenarios</div></div>
+      <div class="trace-evt info"><span class="t">10:02:34.008</span><div class="ev"><strong>llm.call</strong> · anthropic · claude-sonnet-4-6 · 1820 tok</div></div>
+      <div class="trace-evt success"><span class="t">10:02:35.112</span><div class="ev"><strong>sim.run</strong> ParseHeader(n_aa11bb22) → ok</div></div>
+      <div class="trace-evt success"><span class="t">10:02:36.233</span><div class="ev"><strong>sim.run</strong> HashCheck(n_2d91ab03) match=true</div></div>
+      <div class="trace-evt success"><span class="t">10:02:37.801</span><div class="ev"><strong>sim.run</strong> SchemaValidate(n_9f01cc28) → ok</div></div>
+      <div class="trace-evt success"><span class="t">10:02:38.421</span><div class="ev"><strong>sim.run</strong> BranchByField(n_7c22aa11) → to_kafka</div></div>
+      <div class="trace-evt success"><span class="t">10:02:39.302</span><div class="ev"><strong>sim.run</strong> WriteKafka(n_6bc1e42f) → ok</div></div>
+      <div class="trace-evt success"><span class="t">10:02:39.510</span><div class="ev"><strong>deep_equal</strong> sc_1a2b3c · pass</div></div>
+      <div class="trace-evt success"><span class="t">10:02:41.902</span><div class="ev"><strong>deep_equal</strong> sc_2b3c4d · pass</div></div>
+      <div class="trace-evt success"><span class="t">10:02:44.114</span><div class="ev"><strong>deep_equal</strong> sc_3c4d5e · pass</div></div>
+      <div class="trace-evt success"><span class="t">10:02:46.311</span><div class="ev"><strong>deep_equal</strong> sc_4d5e6f · pass</div></div>
+      <div class="trace-evt success"><span class="t">10:02:50.912</span><div class="ev"><strong>deep_equal</strong> sc_5e6f7g · pass</div></div>
+      <div class="trace-evt success"><span class="t">10:02:51.044</span><div class="ev"><strong>phase1.pass</strong></div></div>
+      <div class="trace-evt info"><span class="t">10:02:51.210</span><div class="ev"><strong>phase2.enter</strong></div></div>
+      <div class="trace-evt info"><span class="t">10:03:37.019</span><div class="ev"><strong>phase2.pass</strong> · 12 files</div></div>
+      <div class="trace-evt info"><span class="t">10:03:37.302</span><div class="ev"><strong>phase3.enter</strong></div></div>
+      <div class="trace-evt success"><span class="t">10:06:55.428</span><div class="ev"><strong>phase3.pass</strong> · 5/5 executed</div></div>
+      <div class="trace-evt info"><span class="t">10:06:55.522</span><div class="ev"><strong>run.done</strong> · elapsed 4m 22s</div></div>
+    </div>
+  </aside>
+</div>
+</body>
+</html>
