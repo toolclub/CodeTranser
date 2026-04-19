@@ -1,0 +1,14 @@
+.data/
+.logs/
+.env
+.env.local
+.venv/
+node_modules/
+dist/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.DS_Store
+*.log

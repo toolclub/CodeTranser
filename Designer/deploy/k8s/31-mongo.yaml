@@ -1,0 +1,62 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cascade-mongo-pvc
+  namespace: cascade
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: cascade-mongo
+  namespace: cascade
+spec:
+  serviceName: cascade-mongo
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cascade-mongo
+  template:
+    metadata:
+      labels:
+        app: cascade-mongo
+    spec:
+      containers:
+        - name: mongo
+          image: mongo:7.0
+          ports:
+            - containerPort: 27017
+          volumeMounts:
+            - name: data
+              mountPath: /data/db
+          readinessProbe:
+            exec:
+              command:
+                - mongosh
+                - --quiet
+                - --eval
+                - 'db.runCommand({ping:1}).ok'
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 1Gi }
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: cascade-mongo-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cascade-mongo
+  namespace: cascade
+spec:
+  selector: { app: cascade-mongo }
+  ports:
+    - port: 27017
+      targetPort: 27017

@@ -1,0 +1,77 @@
+# 生产强烈建议用托管 MySQL(RDS/Aurora/CloudSQL);此 manifest 仅作占位
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cascade-mysql-pvc
+  namespace: cascade
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: cascade-mysql
+  namespace: cascade
+spec:
+  serviceName: cascade-mysql
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cascade-mysql
+  template:
+    metadata:
+      labels:
+        app: cascade-mysql
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8.0
+          args:
+            - --character-set-server=utf8mb4
+            - --collation-server=utf8mb4_0900_ai_ci
+            - --default-authentication-plugin=caching_sha2_password
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: cascade-secrets, key: MYSQL_ROOT_PASSWORD }
+            - name: MYSQL_DATABASE
+              value: cascade
+            - name: MYSQL_USER
+              value: cascade
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: cascade-secrets, key: MYSQL_PASSWORD }
+          ports:
+            - containerPort: 3306
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/mysql
+          readinessProbe:
+            exec:
+              command:
+                - bash
+                - -c
+                - 'mysqladmin ping -h 127.0.0.1 -uroot -p"$MYSQL_ROOT_PASSWORD"'
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 200m, memory: 512Mi }
+            limits: { cpu: 1000m, memory: 2Gi }
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: cascade-mysql-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cascade-mysql
+  namespace: cascade
+spec:
+  selector: { app: cascade-mysql }
+  ports:
+    - port: 3306
+      targetPort: 3306

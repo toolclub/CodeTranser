@@ -1,0 +1,193 @@
+# ============================================================
+# Cascade · 单机 docker-compose(唯一一种本地部署形态)
+#
+# 用法:
+#   cp .env.example .env          # Windows: 双击 start.bat 自动复制 + 弹 notepad
+#   docker compose up -d --build  # Windows: start.bat
+#   open http://localhost:8080
+#
+# 服务:mysql / mongo / redis / sandbox / backend / frontend
+# 改代码后:docker compose up -d --build backend  (or frontend)
+# K8S 部署见 deploy/k8s/(分布式生产)
+# ============================================================
+
+services:
+
+  mysql:
+    image: mysql:8.0
+    container_name: cascade-mysql
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --default-authentication-plugin=caching_sha2_password
+    volumes:
+      - ${MYSQL_DATA_DIR:-./.data/mysql}:/var/lib/mysql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - mysqladmin ping -h 127.0.0.1 -uroot -p${MYSQL_ROOT_PASSWORD} || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  mongo:
+    image: mongo:7.0
+    container_name: cascade-mongo
+    restart: unless-stopped
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    volumes:
+      - ${MONGO_DATA_DIR:-./.data/mongo}:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ping:1}).ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: cascade-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - ${REDIS_DATA_DIR:-./.data/redis}:/data
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  # 沙箱:仅 Phase3 用。默认不启(没镜像不影响主流程)
+  #   docker compose --profile sandbox up -d         # 单沙箱
+  #   docker compose --profile sandbox-cluster up -d # 3 worker 集群
+  # 镜像:直接用 fullstack-dev:latest(它已内置 sshd + /sandbox + root:sandbox123)
+  # 本地没有就 build:sandbox/Dockerfile.base(15-30 min,一次性)
+  # ── 沙箱 bootstrap(同一份命令,三个 worker 复用)───────────────────
+  # 本地 fullstack-dev:latest 的 CMD 可能是 /bin/bash(ChatFlow 老版本),
+  # 无 tty 就立刻退出 → 容器死循环重启。这里显式覆盖 command,
+  # 确保 sshd 配好 + root 密码设了 + 前台跑 sshd。
+  # 幂等:每次启动都重跑,多跑没副作用(sed 和 chpasswd 都是幂等)。
+  x-sandbox-bootstrap: &sandbox-bootstrap
+    image: ${SANDBOX_IMAGE:-fullstack-dev:latest}
+    pull_policy: never
+    restart: unless-stopped
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -e
+        mkdir -p /var/run/sshd /sandbox
+        chmod 777 /sandbox
+        sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+        sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+        echo "root:${SANDBOX_ROOT_PASSWORD:-sandbox123}" | chpasswd
+        # host key 缺就生成
+        ssh-keygen -A
+        exec /usr/sbin/sshd -D -e
+
+  sandbox:
+    <<: *sandbox-bootstrap
+    container_name: cascade-sandbox
+    profiles: ["sandbox", "sandbox-cluster"]
+    ports:
+      - "${SANDBOX_SSH_PORT:-2222}:22"
+    volumes:
+      - cascade-sandbox-data:/sandbox
+
+  sandbox-w2:
+    <<: *sandbox-bootstrap
+    container_name: cascade-sandbox-w2
+    profiles: ["sandbox-cluster"]
+    ports:
+      - "2223:22"
+    volumes:
+      - cascade-sandbox-data-w2:/sandbox
+
+  sandbox-w3:
+    <<: *sandbox-bootstrap
+    container_name: cascade-sandbox-w3
+    profiles: ["sandbox-cluster"]
+    ports:
+      - "2224:22"
+    volumes:
+      - cascade-sandbox-data-w3:/sandbox
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: cascade-backend:${APP_VERSION:-0.1.0}
+    pull_policy: never
+    container_name: cascade-backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: mysql+asyncmy://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
+      MONGODB_URL: mongodb://mongo:27017
+      MONGODB_DB: ${MONGO_DB}
+      REDIS_URL: redis://redis:6379/0
+      WORKER_ID: cascade-backend-1
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - ${BACKEND_LOG_HOST_DIR:-./.logs/backend}:/var/log/cascade
+    depends_on:
+      # 沙箱不在依赖里(profile 控制是否启动);backend 启动时如果连不上 SSH 会
+      # graceful degrade(SandboxManager.available=False),Phase3 step 返回 unavailable
+      mysql:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # 启动:先 migrate(幂等,已 apply 的 ddl 自动跳过),再 uvicorn
+    command:
+      - sh
+      - -c
+      - |
+        echo "[entrypoint] running migrations ..." && \
+        python -m app.cli migrate && \
+        echo "[entrypoint] starting uvicorn ..." && \
+        exec uvicorn app.main:app --host 0.0.0.0 --port 8000
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8000/healthz || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: cascade-frontend:${APP_VERSION:-0.1.0}
+    pull_policy: never
+    container_name: cascade-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  cascade-sandbox-data:
+  cascade-sandbox-data-w2:
+  cascade-sandbox-data-w3:
+
+networks:
+  default:
+    name: cascade-network

@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cascade-env
+  namespace: cascade
+data:
+  APP_ENV: "prod"
+  LOG_LEVEL: "INFO"
+
+  # 分布式必须项
+  CHECKPOINTER_KIND: "redis"             # ★ K8S 多副本必须;dev=memory 才是默认
+  AUTH_ENABLED: "true"
+  RATE_LIMIT_ENABLED: "true"
+
+  # 启用所有依赖
+  MONGO_ENABLED: "true"
+  REDIS_ENABLED: "true"
+  METRICS_ENABLED: "true"
+
+  # 内部 service DNS
+  DATABASE_URL: "mysql+asyncmy://cascade:_FROM_SECRET_@cascade-mysql:3306/cascade"
+  MONGODB_URL: "mongodb://cascade-mongo:27017"
+  MONGODB_DB: "cascade"
+  REDIS_URL: "redis://cascade-redis:6379/0"
+
+  # LLM
+  LLM_PROVIDER: "claude"
+  LLM_MODEL_DEFAULT: "claude-sonnet-4-6"
+
+  # 工作流
+  WORKFLOW_GLOBAL_TIMEOUT: "900"
+  PHASE1_AGENT_MAX_ITER: "20"
+  PHASE1_PER_NODE_CALL_LIMIT: "20"
+
+  # CORS
+  CORS_ORIGINS: '["https://cascade.example.com"]'

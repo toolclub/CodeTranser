@@ -1,0 +1,131 @@
+# 后端无状态 Deployment(分布式核心)。多副本水平扩,任意 pod 可被驱逐。
+# Run 状态在 t_workflow_run + Redis,任意 pod 可接管 stop / events 请求。
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cascade-backend
+  namespace: cascade
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: cascade-backend
+  template:
+    metadata:
+      labels:
+        app: cascade-backend
+      annotations:
+        # Prometheus 自动发现
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      # 优雅停机:让正在跑的 Run 有时间结束;长任务可以更长
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: backend
+          image: cascade-backend:0.1.0  # CI 替换为 git sha
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          env:
+            # K8S Downward API:把 pod name 注入 HOSTNAME(被 current_worker_id 自动读)
+            - name: HOSTNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            # 把 Secret 里的密码拼到 DATABASE_URL
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: cascade-secrets, key: MYSQL_PASSWORD }
+            - name: DATABASE_URL
+              value: "mysql+asyncmy://cascade:$(MYSQL_PASSWORD)@cascade-mysql:3306/cascade"
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef: { name: cascade-secrets, key: LLM_API_KEY }
+          envFrom:
+            - configMapRef: { name: cascade-env }
+          readinessProbe:
+            httpGet: { path: /readyz, port: 8000 }
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8000 }
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 5
+          resources:
+            requests: { cpu: 200m, memory: 512Mi }
+            limits: { cpu: 2000m, memory: 2Gi }
+          # 优雅停机 hook(SIGTERM 后 sleep 让 LB 摘掉再退)
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cascade-backend
+  namespace: cascade
+  labels:
+    app: cascade-backend
+spec:
+  selector: { app: cascade-backend }
+  ports:
+    - port: 8000
+      targetPort: 8000
+---
+# DB 迁移 Job:每次发布执行一次(幂等;已 apply 的 ddl 会跳过)
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cascade-migrate
+  namespace: cascade
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate
+          image: cascade-backend:0.1.0
+          command: ["python", "-m", "app.cli", "migrate"]
+          env:
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: cascade-secrets, key: MYSQL_PASSWORD }
+            - name: DATABASE_URL
+              value: "mysql+asyncmy://cascade:$(MYSQL_PASSWORD)@cascade-mysql:3306/cascade"
+          envFrom:
+            - configMapRef: { name: cascade-env }
+---
+# HPA:按 CPU 自动扩,最大 10 副本
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: cascade-backend
+  namespace: cascade
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: cascade-backend
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
