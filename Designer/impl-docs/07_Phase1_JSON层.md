@@ -3,20 +3,20 @@
 > **本章是核心章**。严格按 §2.x 共识实现:
 > - Phase1 = **责任链**,每个 Handler 独立、可插拔、可断链
 > - v1 首批 2 个 Handler:**结构合法性**(纯 Python)、**场景执行对比**(LLM 驱动)
-> - 解释器(ToolSimulator)**JSON 入 JSON 出**
-> - LLM 在 Phase1 扮演 **森林执行的驱动者**——通过 tool-call 决定调哪个节点、传什么 JSON
+> - 解释器(NodeSimulator)**JSON 入 JSON 出**
+> - LLM 在 Phase1 扮演 **森林 Agent**——通过 tool-call 决定调哪个节点、传什么 JSON
 > - 判定原则:**字段级精确对比**。`{status:ok}` vs `{status:success}` = 不对
 > - **森林模型**:Bundle + 节点实例(含游离)+ 全局边;DAG 是计算视图,不存储
 > - 未来新增 Handler(覆盖率 / 不变量 / 数据流类型 / ...)= 新增一个类 + `handler_order`,其它代码不动
 >
-> 依赖:03(NodeTemplate + ToolSimulator + Registry)、04(森林、DesignValidator、DagComputeVisitor)、05(LLMClient、agent_loop)、06(LangGraph 骨架、HandlerStep)
+> 依赖:03(NodeTemplate + NodeSimulator + Registry)、04(森林、DesignValidator、DagComputeVisitor)、05(LLMClient、agent_loop)、06(LangGraph 骨架、HandlerStep)
 >
 > 验收:
 > 1. 给一张合法森林 + 1 条场景,Handler 2 跑通整图,actual_output 与 expected 一致,Phase1 判 valid
 > 2. 设计有缺陷的森林(输出故意不符合)→ Handler 2 一次 agent_loop 内产出不符 actual → Phase1 判 invalid,**不进入 Phase2**
 > 3. 结构非法森林(有环 / Bundle 引用缺失)→ Handler 1 直接拒 → Phase1 判 invalid,**不进入 Handler 2**
 > 4. 把 `ScenarioRunHandler` 从注册表临时摘掉,只剩 `StructureCheckHandler` → Phase1 仍可跑通(责任链可缩)
-> 5. Phase1 trace 完整:每次 LLM 调用、每次 ToolSimulator 调用、每场景的 actual/expected 都落 Mongo
+> 5. Phase1 trace 完整:每次 LLM 调用、每次 NodeSimulator 调用、每场景的 actual/expected 都落 Mongo
 > 6. 覆盖率 ≥ 85%
 
 ---
@@ -30,7 +30,7 @@ app/langgraph/steps/phase1/
 ├── structure_check.py        ★ Handler 1
 ├── scenario_run.py           ★ Handler 2
 ├── prompt.py                 system/initial_user prompt 模板
-├── executor.py               ToolUseRequest → ToolSimulator 执行器
+├── executor.py               LLM ToolUseRequest → NodeSimulator 桥接执行器
 ├── comparator.py             actual vs expected 严格字段对比
 └── attribution.py            失败归因(LLM 辅助,不影响路由)
 
@@ -45,7 +45,7 @@ app/repositories/json_case_repo.py  t_json_case SQL 实现
 ```mermaid
 flowchart TD
     Entry([state: 森林 + 场景]) --> H1[structure_check<br/>纯 Python,调 DesignValidator]
-    H1 -->|pass| H2[scenario_run<br/>LLM 驱动,agent_loop + ToolSim]
+    H1 -->|pass| H2[scenario_run<br/>LLM 驱动,agent_loop + NodeSim]
     H1 -->|fail| END1([END: invalid])
     H2 -->|pass| P2([进入 Phase2 code_planner])
     H2 -->|fail| END2([END: invalid])
@@ -80,7 +80,7 @@ class Scenario:
     name: str
     input_json: Mapping[str, Any]               # 整森林的输入
     expected_output: Mapping[str, Any]          # 整森林的期望输出
-    tables: Mapping[str, list] = field(default_factory=dict)   # 注入给 ToolSimulator.ctx
+    tables: Mapping[str, list] = field(default_factory=dict)   # 注入给 NodeSimulator.ctx
     description: str = ""                       # 给 LLM 看的中文说明
     target_root: str | None = None              # 限定从某个节点实例作为 root 开始;None = 从森林里所有 root 选
 
@@ -184,7 +184,7 @@ class StructureCheckHandler(Phase1HandlerBase):
       - 无自环、无重复边、无 Bundle 归属冲突
       - 节点 field_values 符合 template.input_schema
 
-    不碰 LLM、不调 Tool。纯 Python。
+    不碰 LLM、不调模拟器。纯 Python。
     通过 → state.decision=handler_pass;不通过 → handler_fail。
     """
     name = "structure_check"
@@ -249,7 +249,7 @@ import json
 from app.domain.graph.nodes import CascadeForest, Bundle, NodeInstance, Edge
 
 SYSTEM_HEADER = """\
-你是"级跳设计平台"的森林执行引擎。给你一张森林:含若干 Bundle(大节点,代码层对应 class/function)\
+你是"级跳设计平台"的森林执行 Agent。给你一张森林:含若干 Bundle(大节点,代码层对应 class/function)\
 + 若干游离节点实例(孤儿小节点,代码层对应独立代码片段)+ 全局边(可跨 Bundle)。
 你的任务:
 
@@ -356,7 +356,7 @@ def _render_initial_user(scenario_input: Any, description: str) -> str:
     )
 ```
 
-### 7.6.2 Executor(按节点类型 ToolSpec + 全局查 instance_id)
+### 7.6.2 Executor(按节点模板生成 LLM ToolSpec + 全局查 instance_id)
 
 ```python
 # app/langgraph/steps/phase1/executor.py
@@ -366,11 +366,11 @@ from typing import Any
 import json
 from app.domain.graph.nodes import CascadeForest, NodeInstance
 from app.domain.run.sim import SimContext
-from app.domain.tool.tool import Engine
+from app.domain.node_template.template import Engine
 from app.llm.types import ToolSpec, ToolUseRequest, ToolUseResult
-from app.tool_runtime.registry import ToolRegistry
+from app.node_engine.registry import NodeTemplateRegistry
 from app.langgraph.trace_sink import ToolCallTraceContext
-from app.tool_runtime.errors import SimulatorInputInvalid, SimulatorOutputInvalid
+from app.node_engine.errors import SimulatorInputInvalid, SimulatorOutputInvalid
 from app.infra.metrics import TOOL_CALLS, TOOL_CALL_DUR
 
 @dataclass(slots=True)
@@ -378,7 +378,7 @@ class NodeExecContext:
     forest: CascadeForest
     tables: dict[str, list]
     run_id: str
-    tool_registry: ToolRegistry
+    template_registry: NodeTemplateRegistry
     llm_client: Any
     tool_trace: ToolCallTraceContext
     node_outputs: dict[str, dict]
@@ -388,8 +388,8 @@ class NodeExecContext:
         if self.per_node_counter is None:
             self.per_node_counter = {}
 
-def build_tool_specs(forest: CascadeForest) -> list[ToolSpec]:
-    """每种节点模板 → 一个 ToolSpec。LLM 调用时在 input.instance_id 指定实例"""
+def build_llm_tools(forest: CascadeForest) -> list[ToolSpec]:
+    """每种节点模板 → 一个 LLM ToolSpec。LLM 调用时在 input.instance_id 指定实例"""
     seen: dict[str, ToolSpec] = {}
     for n in forest.node_instances:
         t = n.template_snapshot
@@ -434,7 +434,7 @@ def make_executor(ctx: NodeExecContext):
         except KeyError as e:
             return _err(req.id, f"instance not found: {e}")
 
-        # 3. 节点模板名与 tool 名一致
+        # 3. 节点模板名与 LLM tool 名一致
         if node.template_snapshot.name != req.name:
             return _err(req.id,
                 f"template mismatch: you called {req.name} but instance {instance_id} is {node.template_snapshot.name}")
@@ -445,8 +445,8 @@ def make_executor(ctx: NodeExecContext):
         if n > ctx.per_node_limit:
             return _err(req.id, f"instance {instance_id} called too many times (>{ctx.per_node_limit})")
 
-        # 5. 调对应 ToolSimulator
-        sim = ctx.tool_registry.simulator_of(node.template_snapshot)
+        # 5. 调对应 NodeSimulator
+        sim = ctx.template_registry.simulator_of(node.template_snapshot)
         sim_ctx = SimContext(
             run_id=ctx.run_id, instance_id=instance_id,
             table_data=dict(ctx.tables),
@@ -522,7 +522,7 @@ def _outgoing_edges(forest: CascadeForest, instance_id: str) -> list[dict]:
 
 **执行器的关键设计点**:
 
-1. **Tools 按节点模板类型去重**。LLM 调用时用 `input.instance_id` 指定具体实例
+1. **LLM Tools 按节点模板类型去重**。LLM 调用时用 `input.instance_id` 指定具体实例
 2. **field_values 由执行器自动取**。LLM 不用猜配置,避免胡编
 3. **Bundle 透明**:执行器在全森林里找 instance,不关心实例在哪个 Bundle;但 trace 里记录了 bundle_id 便于诊断
 4. **outgoing_edges 里附 dst_bundle**:LLM 能看到"下一步要跨到哪个 Bundle",有助于语义理解
@@ -666,17 +666,17 @@ from typing import Any
 from app.langgraph.steps.phase1.base import Phase1HandlerBase
 from app.langgraph.steps.phase1.prompt   import build_prompt_bundle
 from app.langgraph.steps.phase1.executor import (
-    NodeExecContext, build_tool_specs, make_executor,
+    NodeExecContext, build_llm_tools, make_executor,
 )
 from app.langgraph.steps.phase1.comparator   import deep_equal, diff_report
 from app.langgraph.steps.phase1.attribution  import attribute_failure
 from app.llm.agent_loop import run_agent_loop
 from app.llm.errors import LLMUnavailable
 from app.services.forest_parser import ForestParser
-from app.tool_runtime.registry import ToolRegistry
+from app.node_engine.registry import NodeTemplateRegistry
 
 class ScenarioRunHandler(Phase1HandlerBase):
-    """LLM 驱动森林执行,对每个场景跑一遍,字段级对比 actual vs expected。
+    """LLM 作为森林 Agent 驱动执行,对每个场景跑一遍,字段级对比 actual vs expected。
 
     任何场景失败 → Handler fail → Phase1 END → final=invalid。
 
@@ -689,13 +689,13 @@ class ScenarioRunHandler(Phase1HandlerBase):
     """
     name = "scenario_run"
     handler_order = 20
-    depends_on = ("llm", "tool_registry", "forest_parser", "settings")
+    depends_on = ("llm", "template_registry", "forest_parser", "settings")
 
-    def __init__(self, *, llm, tool_registry: ToolRegistry,
+    def __init__(self, *, llm, template_registry: NodeTemplateRegistry,
                  forest_parser: ForestParser, settings, **base_kw):
         super().__init__(**base_kw)
         self._llm = llm
-        self._registry = tool_registry
+        self._registry = template_registry
         self._parser = forest_parser
         self._settings = settings
 
@@ -761,12 +761,12 @@ class ScenarioRunHandler(Phase1HandlerBase):
             scenario_description=scenario.get("description", ""),
             max_iterations=max_iter,
         )
-        tools = build_tool_specs(forest)
+        tools = build_llm_tools(forest)
 
         exec_ctx = NodeExecContext(
             forest=forest, tables=scenario.get("tables", {}),
             run_id=run_id,
-            tool_registry=self._registry,
+            template_registry=self._registry,
             llm_client=self._llm,
             tool_trace=self._tool_ctx,
             node_outputs={},
@@ -865,10 +865,10 @@ sequenceDiagram
     participant L as agent_loop
     participant LLM as LLMClient
     participant E as executor
-    participant S as ToolSimulator
+    participant S as NodeSimulator
 
     H->>H: build prompt (Bundle + 游离 + 全局边 + 模板说明)
-    H->>H: build tools (每种节点模板 = 一个 ToolSpec)
+    H->>H: build LLM tools (每种节点模板 → 一个 LLM ToolSpec)
     H->>L: run_agent_loop(system, user, tools, executor)
 
     loop 到 end_turn 或 max_iter
@@ -1022,7 +1022,7 @@ def test_prompt_shows_orphans_and_bundles():
 # tests/unit/phase1/test_executor.py
 async def test_executor_routes(forest, mock_registry):
     ctx = NodeExecContext(forest=forest, tables={"entries":[...]},
-                          run_id="r", tool_registry=mock_registry,
+                          run_id="r", template_registry=mock_registry,
                           llm_client=None, tool_trace=FakeTraceCtx(),
                           node_outputs={})
     ex = make_executor(ctx)
@@ -1133,9 +1133,9 @@ async def test_handler_can_be_dropped(container, ...):
 | --- | --- |
 | 责任链 + Handler | `HandlerStep`(06) + `handler_order` + 自动扫描 + 路由 |
 | 可增量插 Handler | STEP_REGISTRY + `handler_order` 排序 + 无中心列表 |
-| 解释器 JSON 进出 | `ToolSimulator.run(fields, input_json, ctx) → SimResult.output`(03)|
+| 解释器 JSON 进出 | `NodeSimulator.run(fields, input_json, ctx) → SimResult.output`(03)|
 | 上下游纯 JSON 传递 | executor 直接序列化回 LLM,LLM 再 tool-call 下一个 |
-| LLM 读节点模板 doc 驱动全森林 | `build_prompt_bundle` 拼节点模板 description 进 system;`build_tool_specs` 把每种模板暴露为 tool |
+| LLM 作为森林 Agent 驱动全森林 | `build_prompt_bundle` 拼节点模板 description 进 system;`build_llm_tools` 把每种模板暴露为 LLM tool |
 | 字段级精确判定 | `deep_equal` + `diff_report` |
 | `{status:ok}` vs `{status:success}` = 不对 | `test_diff_value_mismatch` 覆盖 |
 | 有节点不对就是错 | Handler 2 任一场景 mismatch 或 error → fail |

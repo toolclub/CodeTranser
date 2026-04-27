@@ -1,6 +1,6 @@
 # 06 · LangGraph 骨架
 
-> 依赖:01(CascadeState)、02(session/redis/mongo/logging)、03(ToolRegistry)、04(森林)、05(LLMClient + TraceContext)
+> 依赖:01(CascadeState)、02(session/redis/mongo/logging)、03(NodeTemplateRegistry)、04(森林)、05(LLMClient + TraceContext)
 > 交付物:`BasePipelineStep`(模板方法)+ `PipelineStepFactory` + `RunEventBus` + `TraceSink`(MongoDB) + Phase1/2/3 三阶段 LangGraph 组装脚手架 + **可插拔 Handler 基类**(为 07 章责任链准备) + 空壳节点 + 端到端 no-op 跑通
 > 验收:
 > 1. 给定一个空 Pipeline(所有 step 都是 no-op),提交一个 WorkflowRun,能跑完三阶段并落 `workflow_run.final_verdict = valid`
@@ -470,7 +470,7 @@ from app.langgraph.steps import STEP_REGISTRY
 from app.langgraph.events import RunEventBus
 from app.langgraph.trace_sink import TraceSink, ToolCallTraceContext
 from app.llm.client import LLMClient
-from app.tool_runtime.registry import ToolRegistry
+from app.node_engine.registry import NodeTemplateRegistry
 from app.services.design_validator import DesignValidator
 from app.services.forest_parser import ForestParser
 
@@ -480,7 +480,7 @@ class StepDeps:
     trace_sink: TraceSink
     tool_trace_ctx: ToolCallTraceContext
     llm_client: LLMClient
-    tool_registry: ToolRegistry
+    tool_registry: NodeTemplateRegistry
     design_validator: DesignValidator
     forest_parser: ForestParser
     run_step_repo: any               # 10 章接入

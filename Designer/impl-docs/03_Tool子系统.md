@@ -1,13 +1,13 @@
-# 03 · 节点模板子系统(Tool)
+# 03 · 节点模板子系统
 
-> **后端内部代码**里继续叫 `Tool` / `NodeTemplate`(别名,二选一);**对外文档/前端/API** 统一叫 "节点模板 / node-template"。本章两个词混用,以表名 `t_node_template` 为准。
+> **命名约定**:本章统一叫"节点模板 / NodeTemplate"。"Tool" 一词**仅**指 AI/LangGraph 的 tool-calling 概念(给 LLM 用的工具)。节点模板的 JSON 层执行器叫"节点模拟器 / NodeSimulator"。以表名 `t_node_template` 为准。
 >
 > 依赖:01(值对象、DTO、DDL)、02(DB 会话、Redis、Logging)
 > 交付物:
-> - ToolSimulator 抽象 + 自动注册表
-> - SimulatorFactory / ToolRegistry(缓存 + pub/sub 热重载) / Loader
+> - NodeSimulator 抽象 + 自动注册表
+> - NodeSimulatorFactory / NodeTemplateRegistry(缓存 + pub/sub 热重载) / Loader
 > - 节点模板 JSON Parser
-> - ToolRepo + ToolService + 两套 API(前端 `/api/node-templates` + 管理 `/api/admin/node-templates`)
+> - NodeTemplateRepo + NodeTemplateService + 两套 API(前端 `/api/node-templates` + 管理 `/api/admin/node-templates`)
 > - **元模板** Service + API(`/api/admin/meta-node-template`)
 > - 一份完整示例模拟器(`IndexTableLookup`)+ 一份示例 JSON 定义
 >
@@ -34,12 +34,12 @@
    - admin 直接走 `POST /api/admin/node-templates` → 可创建**全局节点模板**(engine 任意;可配 pure_python 同名类)
 7. **元模板**是"节点模板表单长什么样"的单例 JSON,预置在 `t_meta_node_template`(01.ddl 已插入),admin 可改
 
-### 3.1.1 LLM 在节点模板子系统 vs Phase1 的双重角色
+### 3.1.1 LLM 的双重角色(节点模拟器 vs 森林 Agent)
 
 | 角色 | 在哪里落地 | 做什么 | 入参 | 出参 |
 | --- | --- | --- | --- | --- |
 | **单节点解释器**(被调) | 本章 `LLMSimulator`(§3.8) | engine=llm 时,按模板 description 推理 output_json | `fields, input_json` | `output_json` |
-| **森林驱动者**(主导) | 07 章 `ScenarioRunHandler` | 读森林 + 所有节点模板 description,通过 tool-call 逐节点调解释器,串起整图,推理判定 | 森林 + scenario | `actual_output` + 归因 |
+| **森林 Agent**(主导) | 07 章 `ScenarioRunHandler` | 读森林 + 所有节点模板 description,通过 tool-call 逐节点调模拟器,串起整图,推理判定 | 森林 + scenario | `actual_output` + 归因 |
 
 两者共用同一套 `LLMClient`(05 章),**调用层级**不同。本章只管前者。
 
@@ -48,12 +48,12 @@
 ## 3.2 模块总览
 
 ```
-app/tool_runtime/
+app/node_engine/
 ├── __init__.py
-├── base.py                     ToolSimulator 抽象、SimResult 常量
+├── base.py                     NodeSimulator 抽象、SimResult 常量
 ├── errors.py                   本子系统专属异常
-├── factory.py                  SimulatorFactory
-├── registry.py                 ToolRegistry(单例)
+├── factory.py                  NodeSimulatorFactory
+├── registry.py                 NodeTemplateRegistry(单例)
 ├── loader.py                   DB -> NodeTemplate 值对象 + Anthropic tool-spec 转换
 ├── json_parser.py              JSON dict/str -> NodeTemplateDefinitionDTO(校验 + 规范化)
 ├── prompt_builder.py           PromptBuilder(LLM 引擎渲染 system prompt)
@@ -69,23 +69,23 @@ app/tool_runtime/
         ├── __init__.py
         └── index_table_lookup.py   ← 唯一的示例实现,作为模板
 
-app/repositories/tool_repo.py       t_node_template / t_node_template_version 仓储
-app/services/tool_service.py        节点模板服务
+app/repositories/node_template_repo.py       t_node_template / t_node_template_version 仓储
+app/services/node_template_service.py        节点模板服务
 app/services/meta_template_service.py  元模板服务
-app/api/admin_tools.py              管理员 / Tool 作者路由
+app/api/admin_node_templates.py              管理员 / 节点模板作者路由
 app/api/node_templates.py           前端路由(只读 + 设计人员创建私有)
 app/api/admin_meta_template.py      元模板路由(仅 admin)
 app/cli/verify_simulators.py        自检:pure_python 节点模板 ↔ SIMULATOR_REGISTRY 对齐
 ```
 
-**注意**:**没有** `seed_tools` CLI 和 `backend/tools/seed/` 目录。节点模板通过 UI/API 创建,admin 手动复制 JSON 亦可。
+**注意**:**没有** `seed_templates` CLI 和 `backend/tools/seed/` 目录。节点模板通过 UI/API 创建,admin 手动复制 JSON 亦可。
 
 ---
 
 ## 3.3 异常
 
 ```python
-# app/tool_runtime/errors.py
+# app/node_engine/errors.py
 from app.domain.errors import BusinessError, DependencyError
 
 class NodeTemplateNotFound(BusinessError):      code = "TOOL_NOT_FOUND";                    http_status = 404
@@ -93,22 +93,22 @@ class TemplateDefinitionInvalid(BusinessError): code = "VALIDATION_TEMPLATE_SCHE
 class SimulatorNotRegistered(BusinessError):    code = "BUSINESS_MISSING_SIMULATOR"
 class SimulatorInputInvalid(BusinessError):     code = "VALIDATION_SIM_INPUT_INVALID"
 class SimulatorOutputInvalid(BusinessError):    code = "VALIDATION_SIM_OUTPUT_INVALID"
-class ToolLLMFailed(DependencyError):           code = "DEPENDENCY_LLM_UNAVAILABLE"
+class SimulatorLLMFailed(DependencyError):           code = "DEPENDENCY_LLM_UNAVAILABLE"
 class MetaTemplateError(BusinessError):         code = "META_TEMPLATE_INVALID"
 ```
 
 ---
 
-## 3.4 ToolSimulator 抽象
+## 3.4 NodeSimulator 抽象
 
 ```python
-# app/tool_runtime/base.py
+# app/node_engine/base.py
 from abc import ABC, abstractmethod
 from typing import ClassVar
 from app.domain.run.sim import SimContext, SimResult
-from app.domain.tool.tool import Engine
+from app.domain.node_template.template import Engine
 
-class ToolSimulator(ABC):
+class NodeSimulator(ABC):
     """所有节点模板模拟器的抽象基类。
 
     约定:
@@ -119,12 +119,12 @@ class ToolSimulator(ABC):
 
     新增一个 pure_python 节点模板的方式:
       1. admin 通过 UI/API 建一个 global 节点模板,engine=pure_python,python_impl=<NodeTemplateName>
-      2. 在 app/tool_runtime/simulators/pure_python/ 下新建一个 <name_snake>.py
-         实现一个 ToolSimulator 子类,tool_name = <NodeTemplateName>
+      2. 在 app/node_engine/simulators/pure_python/ 下新建一个 <name_snake>.py
+         实现一个 NodeSimulator 子类,template_name = <NodeTemplateName>
       3. 写单测
       4. 重启或调 /api/admin/node-templates/registry/reload
     """
-    tool_name: ClassVar[str] = ""                    # = 节点模板 name
+    template_name: ClassVar[str] = ""                    # = 节点模板 name
     engine:    ClassVar[Engine] = Engine.PURE_PYTHON
 
     @abstractmethod
@@ -139,12 +139,12 @@ class ToolSimulator(ABC):
 ## 3.5 JSON Schema 校验器
 
 ```python
-# app/tool_runtime/json_schema.py
+# app/node_engine/json_schema.py
 from functools import lru_cache
 from typing import Any
 import json
 from jsonschema.validators import Draft202012Validator
-from app.tool_runtime.errors import (
+from app.node_engine.errors import (
     SimulatorInputInvalid, SimulatorOutputInvalid, TemplateDefinitionInvalid,
 )
 
@@ -179,10 +179,10 @@ def validate_output(output_schema: dict, data: Any) -> None:
 ## 3.6 模拟器公共小工具
 
 ```python
-# app/tool_runtime/simulators/common.py
+# app/node_engine/simulators/common.py
 """面向节点模板作者的小工具集合。按需增补。"""
 from typing import Any
-from app.tool_runtime.errors import SimulatorInputInvalid
+from app.node_engine.errors import SimulatorInputInvalid
 
 def get_required(d: dict, *keys: str) -> tuple:
     missing = [k for k in keys if k not in d]
@@ -277,15 +277,15 @@ def effective_mask(mask: int | None, width_bits: int) -> int:
 ### 3.7.2 配套 Python 模拟器
 
 ```python
-# app/tool_runtime/simulators/pure_python/index_table_lookup.py
+# app/node_engine/simulators/pure_python/index_table_lookup.py
 from time import perf_counter_ns
-from app.tool_runtime.base import ToolSimulator
-from app.tool_runtime.simulators.common import coerce_int, effective_mask, get_required
+from app.node_engine.base import NodeSimulator
+from app.node_engine.simulators.common import coerce_int, effective_mask, get_required
 from app.domain.run.sim import SimContext, SimResult
-from app.domain.tool.tool import Engine
+from app.domain.node_template.template import Engine
 
 
-class IndexTableLookupSim(ToolSimulator):
+class IndexTableLookupSim(NodeSimulator):
     """查索引表。作为"怎么写一个节点模板模拟器"的范本。
 
     fields:
@@ -298,7 +298,7 @@ class IndexTableLookupSim(ToolSimulator):
       未命中: {"hit": false, "value": null, "index": null}
     ctx.table_data["entries"]: [{"key": int, "value": Any}, ...]
     """
-    tool_name = "IndexTableLookup"
+    template_name = "IndexTableLookup"
     engine = Engine.PURE_PYTHON
 
     def run(self, fields: dict, input_json: dict, ctx: SimContext) -> SimResult:
@@ -331,16 +331,16 @@ class IndexTableLookupSim(ToolSimulator):
 ## 3.8 LLMSimulator(engine=llm 时共用)
 
 ```python
-# app/tool_runtime/simulators/llm_generic.py
+# app/node_engine/simulators/llm_generic.py
 from time import perf_counter_ns
-from app.tool_runtime.base import ToolSimulator
-from app.tool_runtime.json_schema import validate_output
-from app.tool_runtime.prompt_builder import PromptBuilder
-from app.tool_runtime.errors import ToolLLMFailed
-from app.domain.tool.tool import Engine, NodeTemplate
+from app.node_engine.base import NodeSimulator
+from app.node_engine.json_schema import validate_output
+from app.node_engine.prompt_builder import PromptBuilder
+from app.node_engine.errors import SimulatorLLMFailed
+from app.domain.node_template.template import Engine, NodeTemplate
 from app.domain.run.sim import SimResult, SimContext
 
-class LLMSimulator(ToolSimulator):
+class LLMSimulator(NodeSimulator):
     """engine=llm 的节点模板共用这一份。
        - description 渲染成 system prompt
        - fields + input_json 做 user 内容
@@ -350,12 +350,12 @@ class LLMSimulator(ToolSimulator):
 
     def __init__(self, tpl: NodeTemplate) -> None:
         self._tpl = tpl
-        self.tool_name = tpl.name              # type: ignore[misc]
+        self.template_name = tpl.name              # type: ignore[misc]
 
     def run(self, fields, input_json, ctx: SimContext) -> SimResult:
         t0 = perf_counter_ns()
         if ctx.llm is None:
-            raise ToolLLMFailed("no LLMClient in SimContext")
+            raise SimulatorLLMFailed("no LLMClient in SimContext")
 
         pp = PromptBuilder(self._tpl).with_fields(fields).with_input(input_json).build()
         try:
@@ -364,10 +364,10 @@ class LLMSimulator(ToolSimulator):
                 user=pp.user,
                 model=None,
                 output_schema=self._tpl.output_schema,
-                node_name=f"tool_sim:{self._tpl.name}",
+                node_name=f"node_sim:{self._tpl.name}",
             )
         except Exception as e:
-            raise ToolLLMFailed(str(e)) from e
+            raise SimulatorLLMFailed(str(e)) from e
 
         data = resp.parsed_json
         validate_output(self._tpl.output_schema, data)
@@ -383,20 +383,20 @@ class LLMSimulator(ToolSimulator):
 ## 3.9 HybridSimulator(primary + fallback)
 
 ```python
-# app/tool_runtime/simulators/hybrid.py
+# app/node_engine/simulators/hybrid.py
 from time import perf_counter_ns
-from app.tool_runtime.base import ToolSimulator
-from app.domain.tool.tool import Engine
+from app.node_engine.base import NodeSimulator
+from app.domain.node_template.template import Engine
 from app.domain.run.sim import SimResult, SimContext
 
-class HybridSimulator(ToolSimulator):
+class HybridSimulator(NodeSimulator):
     """primary 抛或返回 error 时,若配了 fallback 则转 LLM。"""
     engine = Engine.HYBRID
 
-    def __init__(self, primary: ToolSimulator, fallback: ToolSimulator | None) -> None:
+    def __init__(self, primary: NodeSimulator, fallback: NodeSimulator | None) -> None:
         self._primary = primary
         self._fallback = fallback
-        self.tool_name = primary.tool_name           # type: ignore[misc]
+        self.template_name = primary.template_name           # type: ignore[misc]
 
     def run(self, fields, input_json, ctx: SimContext) -> SimResult:
         t0 = perf_counter_ns()
@@ -419,10 +419,10 @@ class HybridSimulator(ToolSimulator):
 ## 3.10 PromptBuilder
 
 ```python
-# app/tool_runtime/prompt_builder.py
+# app/node_engine/prompt_builder.py
 from dataclasses import dataclass
 from jinja2 import Environment, StrictUndefined, BaseLoader
-from app.domain.tool.tool import NodeTemplate
+from app.domain.node_template.template import NodeTemplate
 
 @dataclass(frozen=True, slots=True)
 class PromptPair:
@@ -466,15 +466,15 @@ class PromptBuilder:
 
 ---
 
-## 3.11 自动收集 + SimulatorFactory
+## 3.11 自动收集 + NodeSimulatorFactory
 
 ```python
-# app/tool_runtime/simulators/__init__.py
+# app/node_engine/simulators/__init__.py
 from __future__ import annotations
 import importlib, pkgutil
-from app.tool_runtime.base import ToolSimulator
+from app.node_engine.base import NodeSimulator
 
-SIMULATOR_REGISTRY: dict[str, type[ToolSimulator]] = {}
+SIMULATOR_REGISTRY: dict[str, type[NodeSimulator]] = {}
 
 def _scan() -> None:
     from . import pure_python
@@ -482,27 +482,27 @@ def _scan() -> None:
         mod = importlib.import_module(f"{pure_python.__name__}.{name}")
         for attr in vars(mod).values():
             if (isinstance(attr, type)
-                and issubclass(attr, ToolSimulator)
-                and attr is not ToolSimulator
-                and attr.tool_name):
-                if attr.tool_name in SIMULATOR_REGISTRY:
-                    raise RuntimeError(f"duplicate simulator for {attr.tool_name}")
-                SIMULATOR_REGISTRY[attr.tool_name] = attr
+                and issubclass(attr, NodeSimulator)
+                and attr is not NodeSimulator
+                and attr.template_name):
+                if attr.template_name in SIMULATOR_REGISTRY:
+                    raise RuntimeError(f"duplicate simulator for {attr.template_name}")
+                SIMULATOR_REGISTRY[attr.template_name] = attr
 
 _scan()
 ```
 
 ```python
-# app/tool_runtime/factory.py
-from app.domain.tool.tool import NodeTemplate, Engine
-from app.tool_runtime.base import ToolSimulator
-from app.tool_runtime.simulators import SIMULATOR_REGISTRY
-from app.tool_runtime.simulators.llm_generic import LLMSimulator
-from app.tool_runtime.simulators.hybrid import HybridSimulator
-from app.tool_runtime.errors import SimulatorNotRegistered
+# app/node_engine/factory.py
+from app.domain.node_template.template import NodeTemplate, Engine
+from app.node_engine.base import NodeSimulator
+from app.node_engine.simulators import SIMULATOR_REGISTRY
+from app.node_engine.simulators.llm_generic import LLMSimulator
+from app.node_engine.simulators.hybrid import HybridSimulator
+from app.node_engine.errors import SimulatorNotRegistered
 
-class SimulatorFactory:
-    def create(self, tpl: NodeTemplate) -> ToolSimulator:
+class NodeSimulatorFactory:
+    def create(self, tpl: NodeTemplate) -> NodeSimulator:
         if tpl.simulator.engine is Engine.PURE_PYTHON:
             return self._pure(tpl)
         if tpl.simulator.engine is Engine.LLM:
@@ -519,7 +519,7 @@ class SimulatorFactory:
             return HybridSimulator(primary, fallback)
         raise ValueError(f"unknown engine {tpl.simulator.engine}")
 
-    def _pure(self, tpl: NodeTemplate) -> ToolSimulator:
+    def _pure(self, tpl: NodeTemplate) -> NodeSimulator:
         # 私有 + pure_python 已被 NodeTemplate.__post_init__ 阻止
         cls = SIMULATOR_REGISTRY.get(tpl.name)
         if cls is None:
@@ -529,27 +529,27 @@ class SimulatorFactory:
 
 ---
 
-## 3.12 ToolRegistry(单例 + 缓存 + pub/sub)
+## 3.12 NodeTemplateRegistry(单例 + 缓存 + pub/sub)
 
 ```python
-# app/tool_runtime/registry.py
+# app/node_engine/registry.py
 from __future__ import annotations
 import asyncio
 from redis.asyncio import Redis
-from app.domain.tool.tool import NodeTemplate, Scope
-from app.tool_runtime.factory import SimulatorFactory
-from app.tool_runtime.base import ToolSimulator
-from app.tool_runtime.loader import ToolLoader, to_anthropic_tool_spec
+from app.domain.node_template.template import NodeTemplate, Scope
+from app.node_engine.factory import NodeSimulatorFactory
+from app.node_engine.base import NodeSimulator
+from app.node_engine.loader import NodeTemplateLoader, to_anthropic_tool_spec
 
-class ToolRegistry:
-    CHANNEL = "tool_registry:invalidate"
+class NodeTemplateRegistry:
+    CHANNEL = "template_registry:invalidate"
 
-    def __init__(self, loader: ToolLoader, factory: SimulatorFactory, redis: Redis) -> None:
+    def __init__(self, loader: NodeTemplateLoader, factory: NodeSimulatorFactory, redis: Redis) -> None:
         self._loader = loader
         self._factory = factory
         self._redis = redis
         self._cache_tpl: dict[str, NodeTemplate] = {}
-        self._cache_sim: dict[str, ToolSimulator] = {}
+        self._cache_sim: dict[str, NodeSimulator] = {}
         self._lock = asyncio.Lock()
 
     async def start(self) -> None:
@@ -582,7 +582,7 @@ class ToolRegistry:
         self._cache_tpl[self._key(t.name, t.owner_id, version)] = t
         return t
 
-    def simulator_of(self, tpl: NodeTemplate) -> ToolSimulator:
+    def simulator_of(self, tpl: NodeTemplate) -> NodeSimulator:
         k = f"{tpl.name}|{tpl.version}|{tpl.owner_id or 0}"
         s = self._cache_sim.get(k)
         if s is None:
@@ -605,10 +605,10 @@ class ToolRegistry:
 > 节点模板定义以 JSON 提交(API)或存 DB(`t_node_template_version.definition` 字段)。本模块做**入参校验 + 规范化**(description 数组 join、schema 自检)。
 
 ```python
-# app/tool_runtime/json_parser.py
-from app.schemas.tool import NodeTemplateDefinitionDTO
-from app.tool_runtime.errors import TemplateDefinitionInvalid
-from app.tool_runtime.json_schema import validate_schema_self
+# app/node_engine/json_parser.py
+from app.schemas.node_template import NodeTemplateDefinitionDTO
+from app.node_engine.errors import TemplateDefinitionInvalid
+from app.node_engine.json_schema import validate_schema_self
 
 def parse_definition(raw: dict) -> NodeTemplateDefinitionDTO:
     try:
@@ -626,20 +626,20 @@ def join_description(description: list[str]) -> str:
 
 ---
 
-## 3.14 ToolLoader(DB → NodeTemplate 值对象)
+## 3.14 NodeTemplateLoader(DB → NodeTemplate 值对象)
 
 ```python
-# app/tool_runtime/loader.py
+# app/node_engine/loader.py
 from sqlalchemy import select
 from app.models.mysql.node_template import NodeTemplateRow
 from app.models.mysql.node_template_version import NodeTemplateVersionRow
-from app.domain.tool.tool import (
+from app.domain.node_template.template import (
     NodeTemplate, Scope, Engine, EdgeSemantic,
     JsonSimulatorSpec, CodeGenerationHints,
 )
-from app.tool_runtime.errors import NodeTemplateNotFound
+from app.node_engine.errors import NodeTemplateNotFound
 
-class ToolLoader:
+class NodeTemplateLoader:
     def __init__(self, session_factory) -> None:
         self._sf = session_factory
 
@@ -709,22 +709,22 @@ def to_anthropic_tool_spec(tpl: NodeTemplate) -> dict:
 
 ---
 
-## 3.15 ToolRepo SQL 实现
+## 3.15 NodeTemplateRepo SQL 实现
 
 ```python
-# app/repositories/tool_repo.py
+# app/repositories/node_template_repo.py
 from abc import ABC, abstractmethod
 from sqlalchemy import select, update
 from app.repositories.base import SqlRepoBase
 from app.models.mysql.node_template import NodeTemplateRow
 from app.models.mysql.node_template_version import NodeTemplateVersionRow
-from app.schemas.tool import NodeTemplateCreateDTO, NodeTemplateDefinitionDTO
-from app.domain.tool.tool import Scope
+from app.schemas.node_template import NodeTemplateCreateDTO, NodeTemplateDefinitionDTO
+from app.domain.node_template.template import Scope
 from app.utils.hash import sha256_json
 from app.utils.ids import new_id
-from app.tool_runtime.errors import NodeTemplateNotFound, TemplateDefinitionInvalid
+from app.node_engine.errors import NodeTemplateNotFound, TemplateDefinitionInvalid
 
-class ToolRepo(ABC):
+class NodeTemplateRepo(ABC):
     @abstractmethod
     async def create(self, dto: NodeTemplateCreateDTO, user_id: int) -> tuple[str, int]: ...
     @abstractmethod
@@ -746,7 +746,7 @@ class ToolRepo(ABC):
     @abstractmethod
     async def list_versions(self, template_id: str) -> list[NodeTemplateVersionRow]: ...
 
-class SqlToolRepo(SqlRepoBase, ToolRepo):
+class SqlNodeTemplateRepo(SqlRepoBase, NodeTemplateRepo):
     async def create(self, dto, user_id):
         q = select(NodeTemplateRow).where(
             NodeTemplateRow.name == dto.name,
@@ -868,21 +868,21 @@ class SqlToolRepo(SqlRepoBase, ToolRepo):
 
 ---
 
-## 3.16 ToolService + MetaTemplateService
+## 3.16 NodeTemplateService + MetaTemplateService
 
-### 3.16.1 ToolService
+### 3.16.1 NodeTemplateService
 
 ```python
-# app/services/tool_service.py
+# app/services/node_template_service.py
 import re
-from app.repositories.tool_repo import ToolRepo
-from app.tool_runtime.registry import ToolRegistry
-from app.tool_runtime.errors import TemplateDefinitionInvalid, SimulatorNotRegistered
-from app.tool_runtime.simulators import SIMULATOR_REGISTRY
-from app.tool_runtime.json_schema import validate_input, validate_output
-from app.tool_runtime.json_parser import parse_definition
-from app.domain.tool.tool import Scope
-from app.schemas.tool import (
+from app.repositories.node_template_repo import NodeTemplateRepo
+from app.node_engine.registry import NodeTemplateRegistry
+from app.node_engine.errors import TemplateDefinitionInvalid, SimulatorNotRegistered
+from app.node_engine.simulators import SIMULATOR_REGISTRY
+from app.node_engine.json_schema import validate_input, validate_output
+from app.node_engine.json_parser import parse_definition
+from app.domain.node_template.template import Scope
+from app.schemas.node_template import (
     NodeTemplateCreateDTO, NodeTemplateUpdateDTO, NodeTemplateDefinitionDTO,
     NodeTemplateSimulateReqDTO, NodeTemplateSimulateRespDTO,
     NodeTemplateOutDTO, NodeTemplateCardDTO, EdgeSemanticDTO,
@@ -894,8 +894,8 @@ from app.domain.errors import Forbidden
 _NAME_RE = re.compile(r"^[A-Z][A-Za-z0-9_]{2,63}$")
 _FIELD_RE = re.compile(r"^[a-z_][a-zA-Z0-9_]{0,63}$")
 
-class ToolService:
-    def __init__(self, repo: ToolRepo, registry: ToolRegistry, llm_client, settings) -> None:
+class NodeTemplateService:
+    def __init__(self, repo: NodeTemplateRepo, registry: NodeTemplateRegistry, llm_client, settings) -> None:
         self._repo = repo
         self._registry = registry
         self._llm = llm_client
@@ -931,9 +931,9 @@ class ToolService:
 
     def _validate_definition(self, d: NodeTemplateDefinitionDTO, *, scope: Scope) -> None:
         joined_desc = "\n".join(d.description)
-        if len(joined_desc) > self._settings.TOOL_DESCRIPTION_MAX_LENGTH:
+        if len(joined_desc) > self._settings.TEMPLATE_DESCRIPTION_MAX_LENGTH:
             raise TemplateDefinitionInvalid("description too long")
-        for kw in self._settings.TOOL_INJECTION_BLOCKLIST or []:
+        for kw in self._settings.TEMPLATE_INJECTION_BLOCKLIST or []:
             if kw and kw in joined_desc:
                 raise TemplateDefinitionInvalid(f"blocklist hit: {kw}")
         parse_definition(d.model_dump())    # 双 schema 自检
@@ -1012,7 +1012,7 @@ from app.repositories.base import SqlRepoBase
 from app.models.mysql.meta_template import MetaTemplateRow
 from app.schemas.meta_template import MetaTemplateDTO, MetaTemplateUpdateDTO
 from app.domain.errors import NotFound
-from app.tool_runtime.errors import MetaTemplateError
+from app.node_engine.errors import MetaTemplateError
 
 META_ID = 1
 
@@ -1060,47 +1060,47 @@ class MetaTemplateService:
 
 ## 3.17 API 路由(三套)
 
-### 3.17.1 管理员 / Tool 作者路由(完整定义)
+### 3.17.1 管理员 / 节点模板作者路由(完整定义)
 
 ```python
-# app/api/admin_tools.py
+# app/api/admin_node_templates.py
 from fastapi import APIRouter, Depends, Request
 from typing import Literal
 from app.schemas.common import ApiResponse
-from app.schemas.tool import (
+from app.schemas.node_template import (
     NodeTemplateCreateDTO, NodeTemplateUpdateDTO, NodeTemplateOutDTO,
     NodeTemplateSimulateReqDTO, NodeTemplateSimulateRespDTO,
 )
 from app.middlewares.auth import require_user, require_admin
-from app.services.tool_service import ToolService
+from app.services.node_template_service import NodeTemplateService
 from app.infra.db.deps import get_session
 
 router = APIRouter(prefix="/api/admin/node-templates", tags=["admin-node-templates"])
 
-async def _svc(request: Request, session=Depends(get_session)) -> ToolService:
-    return request.app.state.container.tool_service_factory(session)
+async def _svc(request: Request, session=Depends(get_session)) -> NodeTemplateService:
+    return request.app.state.container.node_template_service_factory(session)
 
 @router.post("", response_model=ApiResponse[dict], status_code=201)
 async def create_global(body: NodeTemplateCreateDTO, user=Depends(require_admin),
-                        svc: ToolService = Depends(_svc)):
+                        svc: NodeTemplateService = Depends(_svc)):
     tid = await svc.create_global(body, user)
     return ApiResponse(data={"template_id": tid})
 
 @router.put("/{template_id}", response_model=ApiResponse[dict])
 async def update_tpl(template_id: str, body: NodeTemplateUpdateDTO, user=Depends(require_user),
-                     svc: ToolService = Depends(_svc)):
+                     svc: NodeTemplateService = Depends(_svc)):
     v = await svc.update(template_id, body, user)
     return ApiResponse(data={"version_number": v})
 
 @router.get("/{template_id}", response_model=ApiResponse[NodeTemplateOutDTO])
 async def get_tpl(template_id: str, version: int | None = None, user=Depends(require_user),
-                  svc: ToolService = Depends(_svc)):
+                  svc: NodeTemplateService = Depends(_svc)):
     tpl = await svc._registry.get_by_id(template_id, version)
     return ApiResponse(data=svc.to_out_dto(tpl))
 
 @router.get("/{template_id}/versions", response_model=ApiResponse[list])
 async def versions(template_id: str, user=Depends(require_user),
-                   svc: ToolService = Depends(_svc)):
+                   svc: NodeTemplateService = Depends(_svc)):
     rs = await svc._repo.list_versions(template_id)
     return ApiResponse(data=[{"version_number": r.version_number,
                               "change_note": r.change_note,
@@ -1108,24 +1108,24 @@ async def versions(template_id: str, user=Depends(require_user),
 
 @router.post("/{template_id}/versions/{ver}/activate", response_model=ApiResponse[dict])
 async def activate(template_id: str, ver: int, user=Depends(require_user),
-                   svc: ToolService = Depends(_svc)):
+                   svc: NodeTemplateService = Depends(_svc)):
     await svc._repo.activate_version(template_id, ver)
     await svc._registry.invalidate(template_id)
     return ApiResponse(data={"ok": True})
 
 @router.post("/{template_id}/fork", response_model=ApiResponse[dict])
-async def fork(template_id: str, user=Depends(require_user), svc: ToolService = Depends(_svc)):
+async def fork(template_id: str, user=Depends(require_user), svc: NodeTemplateService = Depends(_svc)):
     new_id = await svc.fork(template_id, user)
     return ApiResponse(data={"template_id": new_id})
 
 @router.post("/{template_id}/simulate", response_model=ApiResponse[NodeTemplateSimulateRespDTO])
 async def simulate(template_id: str, body: NodeTemplateSimulateReqDTO,
-                   user=Depends(require_user), svc: ToolService = Depends(_svc)):
+                   user=Depends(require_user), svc: NodeTemplateService = Depends(_svc)):
     return ApiResponse(data=await svc.simulate(template_id, body, user))
 
 @router.post("/registry/reload", response_model=ApiResponse[dict])
 async def reload_registry(request: Request, user=Depends(require_admin)):
-    await request.app.state.container.tool_registry.invalidate()
+    await request.app.state.container.template_registry.invalidate()
     return ApiResponse(data={"ok": True})
 ```
 
@@ -1136,15 +1136,15 @@ async def reload_registry(request: Request, user=Depends(require_admin)):
 from fastapi import APIRouter, Depends, Request
 from typing import Literal
 from app.schemas.common import ApiResponse
-from app.schemas.tool import NodeTemplateCardDTO, NodeTemplateCreateDTO
+from app.schemas.node_template import NodeTemplateCardDTO, NodeTemplateCreateDTO
 from app.middlewares.auth import require_user
-from app.services.tool_service import ToolService
+from app.services.node_template_service import NodeTemplateService
 from app.infra.db.deps import get_session
 
 router = APIRouter(prefix="/api/node-templates", tags=["node-templates"])
 
-async def _svc(request: Request, session=Depends(get_session)) -> ToolService:
-    return request.app.state.container.tool_service_factory(session)
+async def _svc(request: Request, session=Depends(get_session)) -> NodeTemplateService:
+    return request.app.state.container.node_template_service_factory(session)
 
 @router.get("", response_model=ApiResponse[list[NodeTemplateCardDTO]])
 async def list_cards(
@@ -1152,7 +1152,7 @@ async def list_cards(
     category: str | None = None,
     scope: Literal["global", "private", "all"] = "all",
     user=Depends(require_user),
-    svc: ToolService = Depends(_svc),
+    svc: NodeTemplateService = Depends(_svc),
 ):
     rows = await svc.list_visible(scope=scope, category=category, user=user)
     cards: list[NodeTemplateCardDTO] = []
@@ -1162,13 +1162,13 @@ async def list_cards(
     return ApiResponse(data=cards)
 
 @router.get("/{template_id}", response_model=ApiResponse[NodeTemplateCardDTO])
-async def get_card(template_id: str, user=Depends(require_user), svc: ToolService = Depends(_svc)):
+async def get_card(template_id: str, user=Depends(require_user), svc: NodeTemplateService = Depends(_svc)):
     tpl = await svc._registry.get_by_id(template_id)
     return ApiResponse(data=svc.to_card_dto(tpl))
 
 @router.post("", response_model=ApiResponse[dict], status_code=201)
 async def create_private(body: NodeTemplateCreateDTO, user=Depends(require_user),
-                         svc: ToolService = Depends(_svc)):
+                         svc: NodeTemplateService = Depends(_svc)):
     """设计人员建私有节点模板。强制 engine=llm(Service 层校验)"""
     tid = await svc.create_private(body, user)
     return ApiResponse(data={"template_id": tid})
@@ -1207,7 +1207,7 @@ async def update_meta(request: Request, body: MetaTemplateUpdateDTO,
 
 ## 3.18 CLI:verify_simulators
 
-> **不再有** `seed_tools`。admin 通过 UI/API 建节点模板。
+> **不再有** `seed_templates`。admin 通过 UI/API 建节点模板。
 
 ```python
 # app/cli/verify_simulators.py
@@ -1216,7 +1216,7 @@ import click
 from sqlalchemy import select
 from app.cli import _run
 from app.infra.db.session import session_scope
-from app.tool_runtime.simulators import SIMULATOR_REGISTRY
+from app.node_engine.simulators import SIMULATOR_REGISTRY
 from app.models.mysql.node_template import NodeTemplateRow
 from app.models.mysql.node_template_version import NodeTemplateVersionRow
 
@@ -1262,29 +1262,29 @@ if __name__ == "__main__":
 
 ```python
 # app/bootstrap.py (追加)
-from app.tool_runtime.loader import ToolLoader
-from app.tool_runtime.factory import SimulatorFactory
-from app.tool_runtime.registry import ToolRegistry
-from app.services.tool_service import ToolService
+from app.node_engine.loader import NodeTemplateLoader
+from app.node_engine.factory import NodeSimulatorFactory
+from app.node_engine.registry import NodeTemplateRegistry
+from app.services.node_template_service import NodeTemplateService
 from app.services.meta_template_service import MetaTemplateService
-from app.repositories.tool_repo import SqlToolRepo
+from app.repositories.node_template_repo import SqlNodeTemplateRepo
 
 def build_container(settings):
     # ...
-    loader = ToolLoader(sf)
-    sim_factory = SimulatorFactory()
-    tool_registry = ToolRegistry(loader, sim_factory, redis)
+    loader = NodeTemplateLoader(sf)
+    sim_factory = NodeSimulatorFactory()
+    template_registry = NodeTemplateRegistry(loader, sim_factory, redis)
     meta_template_service = MetaTemplateService(sf)
 
-    container.tool_registry = tool_registry
+    container.template_registry = template_registry
     container.meta_template_service = meta_template_service
-    container.tool_service_factory = lambda sess: ToolService(
-        SqlToolRepo(sess), tool_registry, container.llm_client, settings,
+    container.node_template_service_factory = lambda sess: NodeTemplateService(
+        SqlNodeTemplateRepo(sess), template_registry, container.llm_client, settings,
     )
 
 async def startup(container):
     await container.settings_service.start()
-    await container.tool_registry.start()
+    await container.template_registry.start()
 ```
 
 ---
@@ -1300,14 +1300,14 @@ async def startup(container):
 3. `POST /api/node-templates` —— scope 自动 private,engine 强制 llm
 4. 拿到 `template_id` 后就能在画布节点库里看到(`GET /api/node-templates`)
 
-### Admin / Tool 作者(engine 任意)
+### Admin / 节点模板作者(engine 任意)
 
 1. 同上填表单 → `POST /api/admin/node-templates` —— 可选 `scope=global` 和 `engine=pure_python`
 2. 如果 `engine=pure_python`:
-   - 在 `app/tool_runtime/simulators/pure_python/<name_snake>.py` 新建一个 `ToolSimulator` 子类,`tool_name = <NodeTemplateName>`
+   - 在 `app/node_engine/simulators/pure_python/<name_snake>.py` 新建一个 `NodeSimulator` 子类,`template_name = <NodeTemplateName>`
    - 重启服务 **或** 调 `POST /api/admin/node-templates/registry/reload`
    - 跑 `python -m app.cli verify_simulators` 自检
-3. 写单测 `tests/unit/tool_simulators/test_<name_snake>.py`
+3. 写单测 `tests/unit/node_simulators/test_<name_snake>.py`
 
 ### 节点模板 JSON 必填字段(v1)
 
@@ -1335,9 +1335,9 @@ async def startup(container):
 ### 3.22.1 示例模拟器单测
 
 ```python
-# tests/unit/tool_simulators/test_index_table_lookup.py
+# tests/unit/node_simulators/test_index_table_lookup.py
 import pytest
-from app.tool_runtime.simulators.pure_python.index_table_lookup import IndexTableLookupSim
+from app.node_engine.simulators.pure_python.index_table_lookup import IndexTableLookupSim
 from app.domain.run.sim import SimContext
 
 def ctx(**tables):
@@ -1397,31 +1397,31 @@ def test_missing_required_field():
 
 ## 3.23 本章交付物清单
 
-- [ ] `app/tool_runtime/base.py`
-- [ ] `app/tool_runtime/errors.py`
-- [ ] `app/tool_runtime/json_schema.py`
-- [ ] `app/tool_runtime/json_parser.py`
-- [ ] `app/tool_runtime/prompt_builder.py`
-- [ ] `app/tool_runtime/factory.py`
-- [ ] `app/tool_runtime/registry.py`
-- [ ] `app/tool_runtime/loader.py`
-- [ ] `app/tool_runtime/meta_template.py` (可与 service 合并)
-- [ ] `app/tool_runtime/cross_validator.py` skeleton
-- [ ] `app/tool_runtime/simulators/__init__.py` 自动扫描
-- [ ] `app/tool_runtime/simulators/common.py`
-- [ ] `app/tool_runtime/simulators/llm_generic.py`
-- [ ] `app/tool_runtime/simulators/hybrid.py`
-- [ ] `app/tool_runtime/simulators/pure_python/index_table_lookup.py` **(唯一的示例)**
-- [ ] `app/repositories/tool_repo.py`
-- [ ] `app/services/tool_service.py`
+- [ ] `app/node_engine/base.py`
+- [ ] `app/node_engine/errors.py`
+- [ ] `app/node_engine/json_schema.py`
+- [ ] `app/node_engine/json_parser.py`
+- [ ] `app/node_engine/prompt_builder.py`
+- [ ] `app/node_engine/factory.py`
+- [ ] `app/node_engine/registry.py`
+- [ ] `app/node_engine/loader.py`
+- [ ] `app/node_engine/meta_template.py` (可与 service 合并)
+- [ ] `app/node_engine/cross_validator.py` skeleton
+- [ ] `app/node_engine/simulators/__init__.py` 自动扫描
+- [ ] `app/node_engine/simulators/common.py`
+- [ ] `app/node_engine/simulators/llm_generic.py`
+- [ ] `app/node_engine/simulators/hybrid.py`
+- [ ] `app/node_engine/simulators/pure_python/index_table_lookup.py` **(唯一的示例)**
+- [ ] `app/repositories/node_template_repo.py`
+- [ ] `app/services/node_template_service.py`
 - [ ] `app/services/meta_template_service.py`
-- [ ] `app/api/admin_tools.py`
+- [ ] `app/api/admin_node_templates.py`
 - [ ] `app/api/node_templates.py`
 - [ ] `app/api/admin_meta_template.py`
 - [ ] `app/cli/verify_simulators.py`
-- [ ] `tests/unit/tool_simulators/test_index_table_lookup.py`
-- [ ] `tests/unit/tool_runtime/test_*.py`
-- [ ] `tests/integration/test_tool_api.py`
+- [ ] `tests/unit/node_simulators/test_index_table_lookup.py`
+- [ ] `tests/unit/node_engine/test_*.py`
+- [ ] `tests/integration/test_node_template_api.py`
 - [ ] `tests/integration/test_meta_template_api.py`
 
 ---
