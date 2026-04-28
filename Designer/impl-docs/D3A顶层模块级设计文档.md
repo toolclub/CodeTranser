@@ -68,7 +68,7 @@ Cross-Cutting 不作为中间"层"，是任意层都可引用的正交维度；D
 ┌──────────────────▼──────────────────────────────────────┐
 │  Domain Layer (领域层)                                   │
 │   核心业务逻辑、聚合根、值对象、领域服务、状态机           │
-│   tool / graph / execution / phase1 / phase2 /         │
+│   node / graph / execution / phase1 / phase2 /         │
 │   phase3 / review                                        │
 │                                                          │
 │   ★ Domain 只定义 Repository 接口（ABC），不 import       │
@@ -330,7 +330,7 @@ flowchart LR
 
 | saga | 步骤 | 协调对象 |
 |------|------|---------|
-| Pipeline saga（VR → CR） | ValidationRun.SUCCESS(VALID) → 推 GV→PHASE1_PASSED → 用户/系统按需创建 CodegenRun | validation-run, codegen-run, forest-snapshot |
+| Pipeline saga（VR → CR） | ValidationRun.SUCCESS(VALID) → 推 GV→PHASE1_PASSED → 创建 CodegenRun | validation-run, codegen-run, forest-snapshot |
 | ChangeSet apply saga | ChangeSet.OPEN → fork GraphVersion → 触发新 ValidationRun → ChangeSet.APPLIED | changeset, forest-snapshot, validation-run |
 | Submission approval saga | Submission.APPROVED → SubmissionApproved event → GraphVersion → FULLY_VALIDATED | submission, forest-snapshot |
 
@@ -341,7 +341,7 @@ flowchart LR
 - Domain 层代码中**不允许** `import sqlalchemy`、`import motor`、`import redis`、`import docker`
 - 同层模块之间**优先通过领域事件解耦**，必要时通过定义良好的接口直接调用
 - Cross-Cutting 是正交维度，任何层可引用，但 Cross-Cutting 不得反向依赖业务层
-- Integration 层是抗腐层（ACL）：领域代码**不允许**直接 import LLM SDK / Docker SDK
+- Integration 层是抗腐层（ACL）：领域代码**不允许**直接 import LLM SDK / Docker SDK 
 
 ### 1.6 核心交互序列（Submission 完整生命周期）
 
@@ -1946,7 +1946,7 @@ class CancelToken:
   ```
   取消请求 → 写入 cancel_token:{kind}:{run_id} = {by, reason, at, epoch}  (Redis Hash, TTL 24h)
           → publish "run.cancel.{kind}" 频道                              (fast path)
-
+  
   Worker 端 CancelToken：
     1. 订阅 "run.cancel.{kind}"（按自己消费的 Run 类型订阅）
     2. 每 Step 起止 + 每 LLM 调用前后 GET 一次 cancel_token  (slow path 兜底)
@@ -1968,11 +1968,11 @@ class CancelToken:
        WHERE id = ? AND status = 'pending' AND version = ?
        → 命中：直接终止
        → 0 行：Worker 已认领，转软取消（依赖 cancel_token）
-
+  
   Worker 认领后第一件事：
     GET cancel_token:{kind}:{run_id}
     存在 → 立即 transition(RUNNING → CANCELLED) 不进入业务
-
+  
   Worker 在 RUNNING：正常的 cancel_token 双通道检查
   ```
 - **领域事件**：`RunCancelRequested`（payload 含 `run_kind`）, `RunCancelHonored`（payload 含 `run_kind`）
