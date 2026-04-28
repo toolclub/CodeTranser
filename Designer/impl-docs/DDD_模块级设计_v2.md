@@ -1,38 +1,25 @@
-# DDD 模块级设计文档 
+# D3A 顶层模块级设计文档
 
-> 1. **修正模块计数**：从标称"35"修正为实际 **52 个模块**（6 层），消除标题与清单不一致
-> 2. **API 网关路由补全**：从 14 条扩展为 **52 条完整路由**，覆盖所有域的 CRUD + 管理 + WebSocket
-> 3. **修正架构分层违例**：Cross-Cutting 改为正交维度（非层级）；Domain 层依赖倒置（Repository ABC + DI）
-> 4. **CascadeState 语义修正**：明确为"可变执行上下文"（非值对象），引入 Copy-on-Phase 策略和体积控制
-> 5. **新增状态机联动总图**（§7.0）：13 个状态机之间的驱动关系一目了然
-> 6. **新增 LLM 成本控制模块**（llm-cost-ctrl）：Token 预算、模型选择策略、Provider Fallback
-> 7. **Review 域重新定位**：明确触发时机、与 GraphVersion 的关系、自动/手动模式
-> 8. **领域事件总表补全**：从 33 个扩展为 **52 个**，与各模块设计完全对齐
-> 9. **错误码补全**：从 14 个扩展为 **48 个**，覆盖所有域
-> 10. **新增 Phase1 reflection-loop 模块**：SDD/TDD 反思循环有明确归属
-> 11. **修复 GraphVersion VALIDATED 语义**：拆分为 `PHASE1_PASSED` 与 `FULLY_VALIDATED`
-> 12. **idempotency 模块归属修正**：从 Domain 层移至 Application 层
-> 13. **状态机从 12 个增至 13 个**：新增 Phase1 Reflection Loop 状态机
+> **范围**：D3A 系统的顶层模块级设计 — 限界上下文、模块清单、状态机、分布式与可靠性、扩展机制。
+>
+> **读者**：架构 / 评审 / 实现负责人。
+>
+> **约束**：本设计在 D3A 节点 Schema、D3A → 目标语言映射等具体业务字段上保持留白（见第 10 章），承载体（结构、接口、状态机、可靠性骨架）已完整给出。
 
 ------
 
 ## 目录
 
 - [第 1 章 顶层架构与分布式视图](#第-1-章-顶层架构与分布式视图)
-- [第 2 章 模块清单（52 个模块）](#第-2-章-模块清单52-个模块)
+- [第 2 章 模块清单（59 个模块）](#第-2-章-模块清单59-个模块)
 - [第 3 章 Node/Graph 域模块详细设计](#第-3-章-nodegraph-域模块详细设计)
 - [第 4 章 Execution/Phase1 域模块详细设计](#第-4-章-executionphase1-域模块详细设计)
 - [第 5 章 Phase2/Phase3/Review 域模块详细设计](#第-5-章-phase2phase3review-域模块详细设计)
-- [第 6 章 应用层详细设计（含完整 API 路由）](#第-6-章-应用层详细设计含完整-api-路由)
-- [第 7 章 集成层 / 横切关注点 / 基础设施](#第-7-章-集成层--横切关注点--基础设施)
-- [第 8 章 13 个状态机完整规约](#第-8-章-13-个状态机完整规约)
-- [第 9 章 分布式与可靠性设计](#第-9-章-分布式与可靠性设计)
-- [第 10 章 扩展性机制](#第-10-章-扩展性机制)
-- [第 11 章 TBD（D3A 留白）与迁移路径](#第-11-章-tbdd3a-留白与迁移路径)
-- [附录 A 术语表](#附录-a-术语表)
-- [附录 B 错误码总表（48 个）](#附录-b-错误码总表48-个)
-- [附录 C 领域事件总表（52 个）](#附录-c-领域事件总表52-个)
-- [附录 D v2→v3 变更记录](#附录-d-v2v3-变更记录)
+- [第 6 章 应用层 / 集成层 / 横切关注点 / 基础设施](#第-6-章-应用层--集成层--横切关注点--基础设施)
+- [第 7 章 13 个状态机完整规约](#第-7-章-13-个状态机完整规约)
+- [第 8 章 分布式与可靠性设计](#第-8-章-分布式与可靠性设计)
+- [第 9 章 扩展性机制](#第-9-章-扩展性机制)
+- [第 10 章 D3A 留白与术语 / 错误码 / 事件总表](#第-10-章-d3a-留白与术语--错误码--事件总表)
 
 ------
 
@@ -43,7 +30,7 @@
 | 维度         | 目标                                                         | 量化指标（参考）                          |
 | ------------ | ------------------------------------------------------------ | ----------------------------------------- |
 | **可用性**   | 多副本部署，单节点故障不影响服务                             | 99.9%                                     |
-| **可扩展性** | 水平扩展 API/Worker；新增 Phase/Handler/Provider 不动核心代码 | 加节点不停机；新插件 ≤200 行代码          |
+| **可扩展性** | 水平扩展 API/Worker；按扩展类型分级承诺接入成本（见下表）     | 加节点不停机                              |
 | **健壮性**   | 任意阶段崩溃可恢复；非法状态转移强制拒绝                     | 每个 Run 可断点续跑                       |
 | **一致性**   | Run 状态强一致；图快照不可变                                 | 状态变更通过状态机，乐观锁兜底            |
 | **可观测性** | 全链路追踪、指标、审计                                       | trace_id 贯穿、P99 < 2s                   |
@@ -51,9 +38,19 @@
 | **演进能力** | Schema 平滑升级；模板/代码生成目标插件化                     | 同时支持 N-1, N 两版                      |
 | **成本可控** | LLM Token 预算管理；按 Phase/Step 选模型                     | 单 Run Token 上限可配；Fallback 切换 < 5s |
 
-### 1.2 架构分层（v3 修正）
+**扩展接入成本承诺（按类型分级）**：
 
-> **v3 变更**：Cross-Cutting 不再作为中间"层"，改为正交维度；Domain 层通过 Repository 接口隔离 Infrastructure，遵循依赖倒置。
+| 扩展类型 | 接入工作量 |
+|---------|------------|
+| 新 Handler / Validator / Simulator | ≤200 行（实现 ABC + 注册） |
+| 新 LLM Provider | ≤300 行（实现 ABC + 配置 fallback） |
+| 新 SandboxRuntime | ≤500 行（实现 ABC + 工厂） |
+| 新 CodegenTarget | ≤500 行（实现 ABC + 模板集） |
+| 新 Phase | 800–1500 行（需扩状态机 + variant + 错误码 + 事件） |
+
+### 1.2 架构分层
+
+Cross-Cutting 不作为中间"层"，是任意层都可引用的正交维度；Domain 层通过 Repository 接口与 Infrastructure 解耦，遵循依赖倒置。
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -351,7 +348,7 @@ sequenceDiagram
 
 ------
 
-## 第 2 章 模块清单（52 个模块）
+## 第 2 章 模块清单（59 个模块）
 
 ### 2.1 全模块目录
 
@@ -428,7 +425,7 @@ sequenceDiagram
 | 11.4                                                         | docker-driver       | Infra       | -          | Python | shared lib  | docker SDK                              |
 | 11.5                                                         | schema-migration    | Infra       | -          | Python | CLI + Cron  | alembic                                 |
 
-> **统计**：领域层 35 + 应用层 6 + 集成层 6 + 横切面 7 + 基础设施 5 = **52 个模块**（不含 Port 接口定义）
+> **统计**：领域层 35 + 应用层 6 + 集成层 6 + 横切面 7 + 基础设施 5 = **59 个模块**（不含 Port 接口定义；Cross-Cutting 7 个为正交维度，非分层）
 >
 > **Port 接口说明**：标注 ★ 的依赖表示领域层定义了抽象 Port 接口（ABC），由基础设施层或集成层提供具体实现，通过 DI 注入。领域代码中 **import 的是 Port ABC，不是 mysql-store/redis-pubsub 等具体模块**。
 
@@ -653,11 +650,19 @@ class NodeTemplateRegistry:
 ```
 
 - **缓存失效协议**
-  - 写操作：DB 写入成功 → `redis_del(key)` → `redis_publish(template:invalidated, template_id)`
-  - 读操作订阅 channel，收到失效消息后清进程内 LRU
+  1. 写入流程：MySQL 主库写入新版本（事务内同时写 t_outbox） → relay 任务投递 `TemplateUpdated` 事件
+  2. 订阅端收到事件 → invalidate Redis 缓存 + 进程内 LRU
+  3. 失效后下次读 miss 时**强制走主库一次**，并设置上下文标记 `read_master_until = now + 2s`，避免"主从同步未完成 + 失效已生效 + 回到从库读旧值"的窗口
 - **分布式考虑**
   - 锁：写新版本时加 `lock:tpl_version:{template_id}`，超时 5s
-  - 缓存击穿：使用 single-flight 模式（Redis SETNX 哨兵 + 等待）
+  - 缓存击穿（single-flight 落地）：
+    ```
+    miss 时：
+      SET singleflight:{cache_key} owner=me NX PX 5000
+      成功 → 我去查 DB → 写 cache → DEL singleflight
+      失败 → 退避 50ms 后重试 GET cache（最多 10 次，约 500ms）
+           → 仍 miss → 直接查从库（降级，避免无限等待）
+    ```
   - 缓存穿透：不存在的查询用空值占位 30s
   - 一致性：写后读保证（先 DB 后失效），最终一致延迟 < 1s
 - **反模式**
@@ -796,7 +801,7 @@ class TemplateLibraryService:
 
 #### 3.1.5 `schema-engine`（JSON Schema 引擎）
 
-- **限界自上下文**：Node（共享 lib）
+- **限界上下文**：Node（共享 lib）
 - **部署位置**：shared lib
 - **依赖**：jsonschema 第三方库
 - **被依赖**：node-definition, llm-output-schema, forest-visitor
@@ -914,7 +919,7 @@ class GraphVersion:                # 实体
     version_number: int            # 自增
     snapshot: dict                 # 序列化的 CascadeForest（JSON）
     snapshot_hash: str
-    state: VersionState            # DRAFT | SAVED | VALIDATED | ARCHIVED
+    state: VersionState            # DRAFT | SAVED | PHASE1_PASSED | FULLY_VALIDATED | ARCHIVED（见 §7.8）
     validated_at: datetime | None
     created_by: int
     created_at: datetime
@@ -1099,7 +1104,7 @@ class ForestDiffer:
 
 ## 第 4 章 Execution/Phase1 域模块详细设计
 
-### 4.1 Execution 域模块（6 个）
+### 4.1 Execution 域模块（5 个，idempotency 归属于应用层 §6.1.6）
 
 #### 4.1.1 `workflow-run`（运行聚合根）
 
@@ -1139,32 +1144,52 @@ class Phase3Verdict(str, Enum):
     DESIGN_BUG = "design_bug"
     FIX_EXHAUSTED = "fix_exhausted"
 
+class RunKind(str, Enum):
+    """显式区分 Run 的意图，避免 pipeline_variant 单字段承载多重语义。
+    调度层据此分队列、分超时、分重试策略。"""
+    VALIDATION = "validation"   # 仅验证图设计（Phase1）
+    CODEGEN = "codegen"         # 在 PHASE1_PASSED 的版本上做代码生成 + 沙箱验证（Phase2/3）
+    FULL = "full"               # 端到端：Phase1+2+3
+
 @dataclass
 class WorkflowRun:
     id: str                            # r_xxxxxxxx
     graph_version_id: str
+    run_kind: RunKind                  # VALIDATION | CODEGEN | FULL
     status: WorkflowRunStatus
     phase1_verdict: Phase1Verdict | None
     phase2_status: Phase2Status | None
     phase3_verdict: Phase3Verdict | None
     final_verdict: Literal["valid", "invalid", "inconclusive"] | None
-    review_status: ReviewStatus | None
 
+    # ===== 时间预算 =====
     started_at: datetime | None
     finished_at: datetime | None
+    hard_deadline: datetime            # 创建时计算（默认 created_at + 2h）；Worker 据此推导 Step / LLM / Sandbox 子预算
+
+    # ===== Worker 持有 =====
+    owner_worker_id: str | None        # 当前持有者；NULL = 无人认领
+    lease_expires_at: datetime | None  # 租约到期；用于死亡检测
+    fencing_epoch: int                 # 单调递增；每次接管 +1，写入路径据此防御假死复活
+
+    # ===== 编排 =====
     triggered_by: int
-    pipeline_variant: str              # "full" | "phase1_only" | "phase1_phase2" | ...
+    pipeline_variant: str              # "full" | "phase1_only" | "phase1_phase2" | "phase3_direct"
     options: Mapping[str, Any]
     idempotency_key: str | None
 
+    # ===== 失败信息 =====
     error_code: str | None             # ErrorCode 枚举字符串
     error_message: str | None
     error_phase: int | None            # 1 | 2 | 3 | None
 
+    # ===== 锁与时间 =====
     version: int                        # 乐观锁版本号
     created_at: datetime
     updated_at: datetime
 ```
+
+> 评审状态不耦合在 WorkflowRun 上。Review 是独立聚合（见 §5.3.1），读取走 review-workflow 服务。
 
 - **公开接口**
 
@@ -1200,17 +1225,60 @@ class WorkflowRunService:
 - **状态机**：见 §7.1（WorkflowRun 主状态机）
 - **持久化**：MySQL `t_workflow_run`（version 列做乐观锁）
 - **领域事件**：`RunCreated`, `RunStarted`, `RunFinished`, `RunCancelled`, `RunFailed`
+- **Worker 认领协议（lease + fencing）**
+
+  ```sql
+  -- 认领（Worker 启动 / 接管时）
+  UPDATE t_workflow_run
+  SET owner_worker_id = :me,
+      lease_expires_at = NOW() + INTERVAL 60 SECOND,
+      fencing_epoch = fencing_epoch + 1,
+      version = version + 1
+  WHERE id = :run_id
+    AND status IN ('pending', 'running')
+    AND (owner_worker_id IS NULL OR lease_expires_at < NOW())
+    AND version = :expected_version
+  -- 命中 0 行 → 已被他人认领，放弃
+
+  -- 心跳（每 20s）
+  UPDATE t_workflow_run
+  SET lease_expires_at = NOW() + INTERVAL 60 SECOND
+  WHERE id = :run_id AND owner_worker_id = :me AND fencing_epoch = :my_epoch
+  ```
+
+  Worker 写入任何状态时必须带 `fencing_epoch`；存储过程一侧拒绝 epoch 落后的写入，杜绝假死复活的脏写。
+- **状态转移事务边界**
+
+  ```
+  BEGIN TX
+    1. SELECT ... FOR UPDATE WHERE id = ? AND version = ? AND fencing_epoch = ?
+    2. PhaseStateMachine.validate_main_transition(...)
+    3. UPDATE t_workflow_run SET status, version+1, updated_at, ...
+    4. INSERT t_run_step (start/finish 视情况)
+    5. INSERT t_outbox (event_type, payload, occurred_at, aggregate_id)
+  COMMIT
+  ```
+
+  状态、Step、领域事件三件事在同一 MySQL 事务内落地；事件由 outbox relay 异步分发到 Pub/Sub + MongoDB（见 §8.6）。
 - **分布式考虑**
-  - 创建：API 节点写入；幂等键去重见 §4.1.5
-  - 更新：Worker 节点更新；乐观锁失败重试 3 次；3 次失败抛错由上层决策（通常意味着冲突 → 中止）
+  - 创建：API 节点写入；幂等键去重见 §6.1.6
+  - 更新：Worker 节点更新；乐观锁冲突重试退避策略：
+    ```
+    RETRY_BACKOFF = [0.05, 0.1, 0.2, 0.5, 1.0]  # 秒
+    MAX_RETRIES = 5
+    每次重试加 0~30% 抖动；5 次仍冲突 → OptimisticLockExhausted → 转死信
+    ```
   - 查询：从库读，最终一致；高频查询走 Redis 缓存
 - **反模式**
   - ❌ 直接 `UPDATE t_workflow_run SET status = ...` 不走状态机
   - ❌ 在 Worker 中持有 `WorkflowRun` 对象跨阶段（应每次重新加载）
+  - ❌ 写入时不带 fencing_epoch
 - **关键测试**
-  - `test_optimistic_lock_conflict_retries`
+  - `test_optimistic_lock_conflict_retries_with_backoff`
   - `test_invalid_state_transition_rejected`
   - `test_concurrent_finish_only_one_wins`
+  - `test_stale_epoch_write_rejected`
+  - `test_lease_expired_can_be_taken_over`
 
 ------
 
@@ -1284,12 +1352,19 @@ class PhaseStateMachine:
             return "invalid"
         return "inconclusive"
 
+    # 实验性扩展转移（按 feature-flag 启用，用于灰度新状态/新流程）
+    EXPERIMENTAL_TRANSITIONS: set[tuple[WorkflowRunStatus, WorkflowRunStatus]] = set()
+
     @classmethod
     def validate_main_transition(
         cls, current: WorkflowRunStatus, new: WorkflowRunStatus
     ) -> None:
-        if new not in cls.MAIN_TRANSITIONS.get(current, set()):
-            raise InvalidStateTransition(f"{current} → {new} not allowed")
+        if new in cls.MAIN_TRANSITIONS.get(current, set()):
+            return
+        if feature_flag.enabled("experimental_transitions") and (current, new) in cls.EXPERIMENTAL_TRANSITIONS:
+            metrics.inc("state_machine.experimental_transition")
+            return
+        raise InvalidStateTransition(f"{current} → {new} not allowed")
 
     @classmethod
     def transition(
@@ -1409,6 +1484,7 @@ class CascadeState(TypedDict, total=False):
     sandbox_cases: list[SandboxCase]
     execution_results: list[ExecutionResult]
     outer_fix_iter: int
+    fix_suggestion: dict | None        # dynamic-reflector 的 fix 建议（结构化 ChangeSet，非自由文本）
     phase3_verdict: Literal["done", "design_bug", "fix_exhausted"] | None
 
     # ===== 决策 =====
@@ -1418,6 +1494,9 @@ class CascadeState(TypedDict, total=False):
     # ===== 溯源 =====
     messages: list[Mapping]            # LLM 对话历史
     step_history: list[str]            # 已执行的 step 名
+
+    # ===== 扩展点 =====
+    extensions: Mapping[str, Any]      # 实验性 Phase / 自定义字段挂载点；未识别字段保留 + 警告
 
 class Decision(str, Enum):
     IN_PROGRESS = "in_progress"
@@ -1526,90 +1605,18 @@ class StepDetailStore:
 
 ------
 
-#### 4.1.5 `idempotency`（幂等控制）
-
-- **限界上下文**：Execution
-- **部署位置**：API
-- **依赖**：redis-pubsub, mysql-store
-- **被依赖**：api-gateway（创建 Run）, llm-agent-loop（LLM 调用）, sandbox-compiler（编译）
-- **核心职责**
-  1. 通用幂等键管理：`(scope, key) → result_ref` 映射
-  2. 双层存储：Redis 短期（10 分钟）+ MySQL 长期（30 天）
-  3. 三种策略：`first-write-wins`、`return-existing`、`reject-duplicate`
-  4. 自动从请求头 `Idempotency-Key` 提取
-  5. 支持显式 invalidate（用于幂等键 TTL 内重复使用）
-- **关键模型**
-
-```python
-@dataclass(frozen=True)
-class IdempotencyKey:
-    scope: str                         # "create_run" | "llm_call" | "compile"
-    key: str
-    user_id: int | None
-
-class IdempotencyResult(Enum):
-    NEW = "new"                        # 第一次，本次请求继续执行
-    EXISTING = "existing"              # 已有结果，返回缓存
-    IN_PROGRESS = "in_progress"        # 正在执行（请稍后或返回 202）
-```
-
-- **公开接口**
-
-```python
-class IdempotencyService:
-    async def check_or_register(
-        self, key: IdempotencyKey, ttl_seconds: int = 600
-    ) -> tuple[IdempotencyResult, str | None]:
-        """返回 (状态, 已有结果引用)"""
-
-    async def register_result(
-        self, key: IdempotencyKey, result_ref: str, persist: bool = True
-    ) -> None: ...
-
-    async def invalidate(self, key: IdempotencyKey) -> None: ...
-```
-
-- **算法**
-
-```
-1. SET NX scope:key value=IN_PROGRESS px=ttl
-   - 成功 → 返回 NEW
-   - 失败 → 读现有值
-       IN_PROGRESS → 返回 IN_PROGRESS
-       result_ref → 返回 EXISTING
-2. 调用方执行业务逻辑
-3. 成功 → register_result(key, result_ref)
-   - SET scope:key result_ref px=ttl_long
-   - 异步落库 MySQL
-4. 失败 → invalidate(key)
-   - DEL scope:key（允许重试）
-```
-
-- **分布式考虑**
-  - Redis 主从切换可能丢失键 → MySQL 持久化兜底
-  - 客户端重试间隔 < TTL：返回 IN_PROGRESS 让客户端等待
-  - **崩溃恢复**：Worker 崩溃后键残留 IN_PROGRESS → 由后台任务扫描超时键自动清理
-- **反模式**
-  - ❌ 业务方自己写 SETNX（不一致），统一用本服务
-- **关键测试**
-  - `test_concurrent_first_write_wins`
-  - `test_in_progress_returns_existing_after_complete`
-  - `test_crash_recovery_clears_stale_keys`
-
-------
-
-#### 4.1.6 `cancellation`（取消与清理）
+#### 4.1.5 `cancellation`（取消与清理）
 
 - **限界上下文**：Execution
 - **部署位置**：API + Worker
 - **依赖**：redis-pubsub, workflow-run
 - **被依赖**：worker-runtime, sandbox-executor
 - **核心职责**
-  1. 用户/系统发起取消 → 写入 `cancel_token:{run_id}` 到 Redis
-  2. Worker 在每个 Step 起止处与每次 LLM/Tool 调用前后检查 cancel_token
+  1. 用户/系统发起取消 → 同时写 Redis Hash 和发 Pub/Sub 通知
+  2. Worker 在每个 Step 起止处、每次 LLM/Tool 调用前后双通道检查 cancel_token
   3. 检测到取消 → 优雅退出当前 Step，状态置为 `cancelled`
   4. 资源清理：终止沙箱容器、释放分布式锁、刷新 Trace
-  5. 防御取消风暴（同 run 短时间内多次取消请求合并）
+  5. 防御取消风暴（同 Run 短时间内多次取消请求合并）
 - **公开接口**
 
 ```python
@@ -1626,22 +1633,56 @@ class CancelToken:
     def is_set(self) -> bool: ...
 ```
 
+- **双通道设计**
+
+  ```
+  取消请求 → 写入 cancel_token:{run_id} = {by, reason, at, epoch}  (Redis Hash, TTL 24h)
+          → publish "run.cancel" 频道                              (fast path)
+
+  Worker 端 CancelToken：
+    1. 订阅 "run.cancel"（实时收到）
+    2. 每 Step 起止 + 每 LLM 调用前后 GET 一次 cancel_token  (slow path 兜底)
+    3. 跨 LLM 长流式调用：每收到 N 个 token 检查一次
+  ```
+
+  Pub/Sub 用于即时性，Hash 是确定性查询源；Pub/Sub 丢消息时 Hash 兜底。
+- **取消与认领的 Race 处理**
+
+  ```
+  请求路径：
+    1. 写 cancel_token 到 Redis Hash
+    2. 同事务尝试更新：
+       UPDATE t_workflow_run SET status = 'cancelled', version = version + 1
+       WHERE id = ? AND status = 'pending' AND version = ?
+       → 命中：直接终止
+       → 0 行：Worker 已认领，转软取消（依赖 cancel_token）
+
+  Worker 认领后第一件事：
+    GET cancel_token:{run_id}
+    存在 → 立即 transition(running → cancelled) 不进入业务
+
+  Worker 在 RUNNING：正常的 cancel_token 双通道检查
+  ```
 - **领域事件**：`RunCancelRequested`, `RunCancelHonored`
 - **分布式考虑**
-  - 取消令牌存 Redis Hash：`cancel:{run_id} → {by, reason, at}`，TTL 24h
-  - 跨 Worker：广播取消事件 → 各 Worker 立即 invalidate 本地缓存
-  - 超时未响应：30s 后强制杀进程（系统级最后兜底）
+  - 取消令牌 TTL 24h，覆盖最长 Run 时间
+  - 跨 Worker：Pub/Sub 广播取消事件 → 各 Worker 立即 invalidate 本地缓存
+  - 强杀策略（30s 未响应 → SIGKILL）配合 fencing_epoch（§4.1.1）：被强杀的 Worker 复活后，新 epoch 已生效，旧 Worker 写入会被 DB 拒绝
 - **反模式**
   - ❌ 取消后还继续写 state（必须立即停止）
   - ❌ 取消时不清理沙箱容器（资源泄漏）
+  - ❌ 仅依赖 Pub/Sub（订阅短暂离线会丢消息）
 - **关键测试**
   - `test_cancel_during_phase1_stops_current_handler`
   - `test_cancel_terminates_sandbox`
   - `test_cancel_idempotent`
+  - `test_cancel_pubsub_loss_falls_back_to_hash`
+  - `test_pending_cancel_wins_when_uncliamed`
+  - `test_running_cancel_honored_via_token`
 
 ------
 
-### 4.2 Phase1 域模块（5 个）
+### 4.2 Phase1 域模块（6 个）
 
 #### 4.2.1 `structure-check`（结构检查 Handler）
 
@@ -2130,21 +2171,27 @@ class CodeAssemblerStep(BasePipelineStep):
 - **被依赖**：code-generator（保存快照）
 - **核心职责**
   1. 每次完整代码生成（或重大修复后）保存一个 `CodeSnapshot`
-  2. 快照内容：`files`（dict）、`overall_hash`、`issues_fixed`、`node_to_code`
-  3. 支持按 `overall_hash` 去重（相同代码仅存一份）
+  2. 快照内容：`files`、`overall_hash`、`issues_fixed`、`node_to_code`
+  3. 支持按 `overall_hash` 去重（相同代码仅存一份；引用计数）
   4. 支持快照间的 `issues_fixed` diff
 - **关键模型**
 
 ```python
 class CodeSnapshot:
-    id: str                         # cs_xxxxxxxx
-    run_id: str
-    iteration: int                   # 0 = initial, 1+ = fixed
-    source: Literal["initial", "fixed_after_static", "fixed_after_dynamic"]
-    files: Mapping[str, str]          # filepath → content
+    id: str                          # cs_xxxxxxxx
     overall_hash: str                # SHA256(all files)
+    files: Mapping[str, str]          # filepath → content
     issues_fixed: tuple[dict, ...]
     node_to_code: Mapping[str, str]  # instance_id → 代码片段
+    ref_count: int                   # 当前被多少 Run 引用，GC 据此判断
+    created_at: datetime
+
+# Run 与 Snapshot 的多对多关联
+class RunSnapshotRef:
+    run_id: str
+    snapshot_id: str
+    iteration: int                   # 0 = initial, 1+ = fixed
+    source: Literal["initial", "fixed_after_static", "fixed_after_dynamic"]
     created_at: datetime
 ```
 
@@ -2152,17 +2199,30 @@ class CodeSnapshot:
 
 ```python
 class CodeSnapshotRepository:
-    async def save(self, snapshot: CodeSnapshot) -> str: ...
+    async def save_or_dedup(self, files, issues_fixed, node_to_code) -> str: ...
+        # 按 overall_hash 查找；存在则 ref_count += 1 + 返回旧 id；不存在则新建
+    async def link_to_run(self, run_id, snapshot_id, iteration, source) -> None: ...
+    async def unlink_from_run(self, run_id, snapshot_id) -> None: ...   # ref_count -= 1
     async def get(self, snapshot_id: str) -> CodeSnapshot | None: ...
     async def get_by_hash(self, hash: str) -> CodeSnapshot | None: ...
     async def list_by_run(self, run_id: str) -> list[CodeSnapshot]: ...
 ```
 
+- **生命周期与 GC**
+
+  ```
+  保存：save_or_dedup → ref_count += 1 → link_to_run
+  Phase2 失败补偿：unlink_from_run （ref_count -= 1），快照本身不动
+  GC：每天后台扫描 ref_count = 0 且 created_at < 7 天的快照 → 物理删除
+       删除前再次校验 ref_count（防与并发 link 冲突）
+  ```
 - **状态机**：见 §7.4
-- **分布式考虑**：快照按 hash 去重，同一代码跨 Run 共享
+- **分布式考虑**：快照按 hash 去重，同一代码跨 Run 共享；ref_count 字段写入用乐观锁
 - **关键测试**
   - `test_hash_dedup_identical_code`
   - `test_iteration_tracking`
+  - `test_unlink_does_not_break_other_runs`
+  - `test_gc_only_removes_zero_ref_after_grace_period`
 
 ------
 
@@ -2725,7 +2785,7 @@ class ReviewCommentService:
 
 ## 第 6 章 应用层 / 集成层 / 横切关注点 / 基础设施
 
-### 6.1 Application Layer（应用层 — 5 个模块）
+### 6.1 Application Layer（应用层 — 6 个模块）
 
 #### 6.1.1 `api-gateway`（API 网关）
 
@@ -2792,7 +2852,7 @@ class ErrorResponse:
 # 504 Gateway Timeout — 超时
 ```
 
-- **完整路由设计（52 条）**
+- **完整路由设计（55 条）**
 
 ```
 ╔══════════════════════════════════════════════════════════════════════════════════╗
@@ -3373,7 +3433,7 @@ class SandboxRuntime(ABC):
 
 ------
 
-### 6.3 Cross-Cutting Concerns（横切关注点 — 6 个模块）
+### 6.3 Cross-Cutting Concerns（横切关注点 — 7 个模块）
 
 #### 6.3.1 `trace-bus`（Trace/事件总线）
 
@@ -4906,6 +4966,463 @@ ReflectionDecisionSchema:
 
 ## 第 8 章 分布式与可靠性设计
 
+### §8.0 v2 补丁集（对前序章节的稳定性 / 分布式 / 扩展性修订）
+
+> 本节是 v2 评审后追加的修订条目。它**修正/覆盖**前序章节中存在缺陷的设计点。
+> 实施时以本节描述为准。每条都附带 **问题** → **修正** → **影响范围**，便于落地。
+
+#### B1 Worker 存活检测：Lease + Heartbeat + Fencing Token（覆盖 §7.1 / §8.7）
+
+**问题**：原方案仅用 `updated_at < now() - 30min` 的 Cron 扫描判断 Worker 死亡。30 分钟感知延迟过大，且无 fencing 机制，假死 Worker 复活后会与新接管 Worker 争抢同一 Run 的写入。
+
+**修正**：
+
+```
+WorkflowRun 表新增字段：
+  owner_worker_id: str | None    # 当前持有者
+  lease_expires_at: datetime     # 租约到期
+  fencing_epoch: bigint          # 单调递增，每次接管 +1
+
+Worker 认领 Run：
+  UPDATE t_workflow_run
+  SET owner_worker_id = :me,
+      lease_expires_at = NOW() + INTERVAL 60 SECOND,
+      fencing_epoch = fencing_epoch + 1,
+      version = version + 1
+  WHERE id = :run_id
+    AND status IN ('pending', 'running')
+    AND (owner_worker_id IS NULL OR lease_expires_at < NOW())
+    AND version = :expected_version
+
+Worker 心跳（每 20s）：
+  UPDATE t_workflow_run
+  SET lease_expires_at = NOW() + INTERVAL 60 SECOND
+  WHERE id = :run_id AND owner_worker_id = :me AND fencing_epoch = :my_epoch
+
+Worker 写入任何状态前必须带 fencing_epoch；
+DB 一侧 stored procedure 拒绝 epoch 落后的写入（防御假死复活的脏写）。
+```
+
+**死亡检测**：60 秒内无心跳即可被新 Worker 接管，比 30 分钟的 Cron 灵敏 30×。Cron 只做兜底（孤儿 Run > 5min 无心跳重入队）。
+
+**影响范围**：§4.1.1 WorkflowRun 表结构、§6.1.3 worker-runtime、§7.1 主状态机崩溃恢复、§4.1.4 RunStep 写入需带 epoch。
+
+---
+
+#### B2 Saga 补偿：CodeSnapshot 引用计数（覆盖 §8.6.1）
+
+**问题**：原方案"Phase2 失败 → 删除已创建的 CodeSnapshot"。但 §5.1.4 设计是按 `overall_hash` 共享快照，物理删除会破坏其他 Run 的引用。
+
+**修正**：
+
+```
+t_code_snapshot 增加 ref_count: int (default 0)
+
+每个 WorkflowRun 与其引用的 CodeSnapshot 之间维护 t_run_snapshot_ref 关联表：
+  (run_id, snapshot_id, created_at)
+
+补偿语义：
+  Phase2 失败 → 删除 t_run_snapshot_ref 记录（unlink）
+  → snapshot 自身不动
+  → 后台 GC 任务每天扫一次 ref_count = 0 且 created_at < 7 天的 snapshot 才物理删除
+
+物理删除前再次校验 ref_count（防止与并发 Run 引用冲突）。
+```
+
+**影响范围**：§5.1.4 code-snapshot、§8.6.1 Saga 表。
+
+---
+
+#### B3 Outbox 模式统一：所有跨存储写入走 Transactional Outbox（覆盖 §4.1.4 / §8.6.2）
+
+**问题**：原文档对 RunStep / Trace / 事件存在两种不一致语义："best-effort 异步写 MongoDB" 与 "MySQL 事务内写 outbox"。两条路径并存导致 trace 缺失或重复。
+
+**修正：统一规则**
+
+| 数据类型 | 一致性要求 | 写入路径 |
+|---------|----------|---------|
+| WorkflowRun / RunStep 主表 | 强一致（业务真值） | MySQL 事务内直写 |
+| 领域事件（含 RunStep 完成事件） | 至少一次投递 | 同事务写 t_outbox 表，relay 任务异步分发到 Redis Pub/Sub + MongoDB |
+| 详细 trace（input/output payload） | 最多丢失少量 | 通过 outbox 投递；relay 任务消费时写 MongoDB |
+| WebSocket 实时推送 | 尽力 | relay 任务投递到 Redis Pub/Sub 后由 websocket-pusher 扇出 |
+
+**relay 任务**：单例（Redlock 选主），每 200ms 扫一次 outbox，按 (aggregate_id, occurred_at) 顺序投递；投递成功后标记已发送；失败保留重试（指数退避，最多 6 次后转死信表 + 告警）。
+
+**影响范围**：§4.1.4 RunStep 写入路径、§6.3.1 trace-bus、§8.6.2 outbox 模式细化。
+
+---
+
+#### B4 取消通知：双通道（覆盖 §4.1.6）
+
+**问题**：原方案靠 Redis Pub/Sub 单通道广播取消事件；订阅短暂离线即丢失。
+
+**修正**：
+
+```
+取消请求 → 写入 cancel_token:{run_id} = {by, reason, at, epoch} (Redis Hash, TTL 24h)
+        → 同时 publish "run.cancel" 频道（fast path）
+
+Worker 端 CancelToken：
+  1. publish 订阅（实时收到）
+  2. 每 Step 起止 + 每 LLM 调用前后做一次 GET（slow path，兜底）
+  3. 跨 LLM 长流式调用：每收到 N 个 token 检查一次
+
+强杀策略（30s 未响应 → 操作系统级 SIGKILL）必须配合 fencing_epoch：
+  被强杀的 Worker 复活后，新 epoch 已生效，旧 Worker 写入会被 DB 拒绝。
+```
+
+**影响范围**：§4.1.6 cancellation、§6.1.3 worker-runtime。
+
+---
+
+#### B5 状态机 + Step + 事件原子性：统一走 Outbox
+
+**问题**：状态机更新 / RunStep 写入 / 领域事件发布三件事原本散在不同位置，没有事务边界。
+
+**修正**：
+
+```
+应用层 WorkflowRunService.transition_status() 的实现合约：
+
+  BEGIN TX
+    1. SELECT ... FOR UPDATE WHERE id = ? AND version = ? AND fencing_epoch = ?
+    2. PhaseStateMachine.validate_main_transition(...)
+    3. UPDATE t_workflow_run SET status, version+1, updated_at, ...
+    4. INSERT t_run_step (start/finish 视情况)
+    5. INSERT t_outbox (event_type, payload, occurred_at, aggregate_id)
+  COMMIT
+
+  → relay 任务异步消费 outbox（B3）
+```
+
+**影响范围**：§4.1.1 / §4.1.2 / §6.1.3 worker-runtime 调用约束。
+
+---
+
+#### B6 Run 认领与取消 Race（覆盖 §4.1.6 / §7.1）
+
+**问题**：用户在 Run 处于 PENDING 时取消，与 Worker dequeue 是 race。文档未定义胜者。
+
+**修正**：
+
+```
+取消请求路径：
+  1. 写 cancel_token 到 Redis（B4）
+  2. 同事务里尝试更新 WorkflowRun：
+     UPDATE t_workflow_run
+     SET status = 'cancelled', version = version + 1
+     WHERE id = ? AND status = 'pending' AND version = ?
+     → 命中：直接终止
+     → 0 行：说明 Worker 已认领，依赖 cancel_token 软取消
+
+Worker 认领后第一件事：
+  GET cancel_token:{run_id}
+  存在 → 立即 transition(running → cancelled) 不进入业务
+
+Worker 已进入 RUNNING：
+  正常 cancel_token 检查（B4 路径）。
+```
+
+**影响范围**：§4.1.6 / §7.1。
+
+---
+
+#### B7 Deadline 透传链（修补全文）
+
+**问题**：SimContext 有 deadline，但 deadline 怎么从 API 入参传到 Worker / LLM / Sandbox 没定义。
+
+**修正**：
+
+```
+1. API 入参 RunCreateDTO 增加 hard_deadline: datetime | None (可选；默认 NOW + 2h)
+2. 持久化到 t_workflow_run.hard_deadline
+3. Worker 加载 Run 时计算剩余预算：budget = hard_deadline - now()
+4. SimContext.deadline 由当前 Step 的子预算（按 phase 默认占比 + 剩余预算分配）
+5. LLM Provider chat() 接收 timeout_ms 参数（必填）—— 由调用方传 min(provider_default, deadline剩余)
+6. Sandbox run_command() 同样必填 timeout_s
+7. 任意层若 deadline 已过，立即抛 DeadlineExceeded，不再发起新 IO
+```
+
+**影响范围**：§4.1.1 WorkflowRun 表、§3.1.3 SimContext、§6.2.1 LLMProvider 接口、§6.2.6 SandboxRuntime 接口。
+
+---
+
+#### B8 乐观锁重试策略
+
+**修正**：
+
+```python
+RETRY_BACKOFF = [0.05, 0.1, 0.2, 0.5, 1.0]  # 秒
+MAX_RETRIES = 5
+on conflict:
+  attempt < 5 → sleep(backoff[attempt] * (1 + uniform(0, 0.3))) → retry
+  attempt = 5 → 抛 OptimisticLockExhausted → 上层路由到死信
+```
+
+替换原 §4.1.1 "重试 3 次"。
+
+---
+
+#### C1 队列实现统一：Celery + Redis List（不混用 Streams）
+
+**问题**：原文档同时声明"Celery 任务"和"Stream-based 队列做 Celery broker 替代"。Celery 不支持 Streams 作 broker。
+
+**修正：明确二选一为 Celery**
+
+```
+所有任务调度走 Celery broker = Redis (list 模式，默认)。
+Streams 仅用于：
+  - outbox relay 任务（B3）的事件传输
+  - WebSocket 推送通道（替代经典 Pub/Sub 的不可靠性）
+
+不存在"Celery 用 Streams"的混合形态。
+```
+
+**影响范围**：§6.4.3 redis-pubsub、§6.1.3 worker-runtime。
+
+---
+
+#### C2 Pub/Sub 限制：用 Streams 替代关键路径的 Pub/Sub
+
+**修正**：
+
+| 场景 | 选型 | 理由 |
+|------|------|------|
+| WebSocket 实时推送 | **Streams (consumer group)** | 客户端断线重连可补发未消费消息 |
+| 取消信号广播 | **Pub/Sub + Hash 兜底**（B4） | 取消信号可丢，Hash 提供确定性查询 |
+| 节点缓存失效 | **Pub/Sub** | 缓存失效可容忍少量延迟 |
+| Run 状态变更（持久审计） | **Outbox + Streams** | B3 已覆盖 |
+
+Redis Cluster sharded pub/sub（7.0+）必须启用，channel 按 `run_id` hash 路由。
+
+**影响范围**：§6.1.2 websocket-pusher、§6.4.3。
+
+---
+
+#### C3 NodeRegistry 写后读主库（覆盖 §3.1.2）
+
+**修正**：
+
+```
+模板写入流程：
+  1. MySQL 主库写入新版本（事务内同时写 t_outbox）
+  2. relay 任务投递 TemplateUpdated 事件
+  3. 订阅端收到事件 → invalidate Redis 缓存 + 进程内 LRU
+  4. 下次读 miss → 强制走主库一次（设置上下文标记 read_master_until = now + 2s）
+
+避免"主从同步未完成 + 失效已生效 + 回到从库读旧值"的窗口。
+```
+
+---
+
+#### C4 idempotency 后台清理删除（覆盖 §6.1.6）
+
+**修正**：删除"后台任务扫描超时键"的描述。`SETNX ... PX=ttl` 自带过期，无需冗余清理。MySQL outbox 仅在 Redis 不可用时降级路径使用，由 relay 任务统一 GC。
+
+---
+
+#### C5 GraphVersion 并发 Phase1（覆盖 §7.8 不变式）
+
+**修正**：删除"同时只能有一个 Run 在 Phase1 中验证同一版本"约束。同一不可变快照的多 Run 并行 Phase1 是合法的（验证结果幂等）。`PHASE1_PASSED` 转移仍要乐观锁，但不限并发。
+
+---
+
+#### C6 MongoDB 分片片键（覆盖 §6.4.2）
+
+**修正**：
+
+```
+片键：{ run_id_hash: hashed }（hashed shard key）而非 run_id 明文
+原因：run_id 由雪花/UUIDv7 生成单调递增，明文片键会形成热点分片。
+
+run_step_details 集合：
+  shard key: { run_id_hash: hashed }
+  索引: { run_id: 1, started_at: -1 }   # 业务查询走二级索引
+  TTL index: { finished_at: 1, expireAfterSeconds: 7776000 }
+```
+
+---
+
+#### C7 Cache Stampede single-flight 落地细节（覆盖 §3.1.2）
+
+**修正**：
+
+```
+miss 时：
+  SET singleflight:{cache_key} owner=me NX PX 5000
+  成功 → 我去查 DB → 写 cache → DEL singleflight
+  失败 → 退避 50ms 后重试 GET cache（最多 10 次，约 500ms）
+       → 仍 miss → 直接查从库（降级，避免无限等待）
+```
+
+---
+
+#### C8 LLM 幂等键规范化（覆盖 §6.2.1 / §8.2.3）
+
+**修正**：
+
+```
+def llm_idem_key(provider, model, messages, tools, output_schema) -> str:
+    payload = {
+        "p": provider,
+        "m": model,
+        "msgs": [_canon_msg(m) for m in messages],
+        "tools": sorted([_canon_tool(t) for t in tools or []], key=lambda x: x["name"]),
+        "schema": json.dumps(output_schema, sort_keys=True, separators=(",", ":")),
+    }
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()
+    ).hexdigest()
+
+_canon_msg / _canon_tool：
+  - 字典 key 排序
+  - 浮点保留 6 位
+  - None / "" / 空列表统一删除
+  - 字符串去前后空白
+```
+
+---
+
+#### C9 Sandbox 节点容错（覆盖 §1.4 / §6.4.4）
+
+**修正**：
+
+```
+每 sandbox 节点 Docker Daemon healthcheck（每 5s 通过 Docker Stats API）：
+  - daemon down → Worker 标记自身 unhealthy → Celery 自动从 phase3_queue 摘除
+  - 进行中的 Run → Worker 写 RunStep "infra_failed"，不立即 FAIL；
+    通过 fencing 机制让另一节点接管（B1）
+  - 节点故障告警 → 运维介入
+```
+
+---
+
+#### C10 Sandbox 强化（覆盖 §5.2.2 / §5.2.4 / §6.4.4）
+
+**修正强制要求**：
+
+```
+每个沙箱容器必须同时启用：
+  - network_mode: none
+  - read_only: true（rootfs 只读，仅 /tmp 可写且 tmpfs）
+  - cap_drop: ALL
+  - security_opt: [no-new-privileges, seccomp=<profile.json>, apparmor=<profile>]
+  - userns_mode: host → 改用 user namespace 隔离（uid/gid 重映射）
+  - cgroup: cpu/memory/pids/ulimit_fsize 全配置
+  - oom_kill_disable: false
+```
+
+---
+
+#### C11 trace_id 跨进程透传（覆盖 §6.3.1）
+
+**修正**：
+
+```
+HTTP：W3C Trace Context（traceparent header）
+Celery：在 task headers 中透传 traceparent / baggage
+LLM 调用：通过 metadata.user_id + 自定义 metadata.trace_id 透传到 Provider
+Sandbox：作为容器环境变量 X_TRACE_ID 注入
+
+trace-bus emit 时自动从 contextvars 读取 trace_id / span_id，不需要业务层显式传。
+```
+
+---
+
+#### C12 multi-region WebSocket（覆盖 §6.1.2）
+
+**待决策**：当前 v2 假设单 region 部署。multi-region 推后到 v3 再处理（用 Pub/Sub 跨 region 桥接 / 用户连最近 region + 后端 sticky session）。本节仅记录 TBD。
+
+---
+
+#### D1 修订"新插件 ≤200 行"KPI（覆盖 §1.1）
+
+**修正分级**：
+
+| 扩展类型 | 实际代价 | KPI |
+|---------|---------|----|
+| 新 Handler / Validator / Simulator | 仅实现 ABC + 注册 | ≤200 行 |
+| 新 LLM Provider | 实现 ABC + 配置 fallback | ≤300 行 |
+| 新 CodegenTarget | 实现 ABC + 模板集 | ≤500 行 |
+| 新 Phase | 需扩状态机表 + variant + 错误码 + 事件 | 800–1500 行（不再用"≤200 行"承诺） |
+| 新 SandboxRuntime | 接口 + 工厂 + 配置 | ≤500 行 |
+
+---
+
+#### D2 CascadeState 开放扩展（覆盖 §4.1.3）
+
+**修正**：在 CascadeState TypedDict 中加入 `extensions: Mapping[str, Any]`，未识别字段保留 + 警告，与 §3.1.1 NodeTemplateDefinition 对齐：
+
+```python
+class CascadeState(TypedDict, total=False):
+    # ... 原字段
+    extensions: Mapping[str, Any]   # 实验性 Phase / 自定义字段挂载点；未识别字段保留 + 警告
+```
+
+---
+
+#### D3 状态机表驱动（覆盖 §4.1.2）
+
+**修正**：MAIN_TRANSITIONS / next_phase 决策表保留为代码常量（性能 + 类型安全），但通过 feature-flag 支持"附加转移"实验：
+
+```python
+class PhaseStateMachine:
+    @classmethod
+    def validate_main_transition(cls, current, new):
+        if new in cls.MAIN_TRANSITIONS.get(current, set()):
+            return
+        if feature_flag.enabled("experimental_transitions"):
+            if (current, new) in cls.EXPERIMENTAL_TRANSITIONS:
+                metrics.inc("state_machine.experimental_transition")
+                return
+        raise InvalidStateTransition(...)
+```
+
+---
+
+#### D4 SandboxRuntime 抽象（覆盖 §6.2.6）
+
+**修正**：抽象分两层：
+
+```python
+class SandboxRuntime(ABC):
+    """容器/microVM 池管理（生命周期 + 资源）"""
+    async def acquire(self, image, resources) -> SandboxHandle: ...
+    async def release(self, handle) -> None: ...
+
+class SandboxSession(ABC):
+    """单次会话内的命令/文件操作（适合 Firecracker microVM 多次复用）"""
+    async def exec(self, cmd, stdin, timeout) -> ExecResult: ...
+    async def push_file(self, src, dst) -> None: ...
+    async def pull_file(self, path) -> bytes: ...
+```
+
+Docker 实现把 acquire 后立刻销毁（per-task 容器）；Firecracker 实现可在同一 microVM 上跑多次 exec。
+
+---
+
+#### D5 Schema migration 外部化（覆盖 §9.6.1）
+
+**修正**：把 MIGRATIONS 字典从源码挪到 `schema_migrations/cascade_state/v{N}_to_v{N+1}.py`，由 schema-migration 模块按版本号扫描加载。源码中只保留 `apply_migrations(state, target_v)` 调度入口。
+
+---
+
+#### D6 RBAC 角色统一（覆盖 §6.3.4 / §5.3.1）
+
+**修正：统一为五元角色 + 资源级 ACL**
+
+```
+全局角色：admin / reviewer / editor / viewer / guest
+资源级 ACL：每个 Graph / Template / Submission 维护 owner_id + acl: {user_id: role}
+权限计算：max(全局角色, 资源 ACL 角色)
+
+Review 矩阵中的 "owner" = 资源 ACL = owner，不再是独立角色。
+```
+
+---
+
+
+
 ### 8.1 可靠性设计原则
 
 | 原则         | 具体措施                                      |
@@ -5357,7 +5874,7 @@ else:
 | Schema Version  | 演进   | 用于追踪状态对象的格式版本                                   |
 | D3A             | 业务   | 指令集规范（待定）                                           |
 
-### 10.5 错误码总表（48 个）
+### 10.5 错误码总表（66 个）
 
 #### RUN 系列（Run 执行）
 
@@ -5472,7 +5989,9 @@ else:
 
 ---
 
-### 10.6 领域事件总表（52 个）
+### 10.6 领域事件总表（62 个）
+
+> 总计 = Run 10 + Phase1 8 + Phase2 6 + Phase3 10 + Step 4 + Template 5 + GraphVersion 5 + Review 6 + Comment 3 + Sandbox/LLM 4 + Cost 1 = **62**
 
 #### Run 生命周期事件（10 个）
 
@@ -5593,5 +6112,129 @@ else:
 
 ------
 
+### 10.7 待决策架构问题（v2 → v3 之间需要拍板）
 
-*文档版本: v2.0* *创建日期: 2026-04-27* *下次评审: D3A 规范确定后补全 TBD 项*
+> 这三条都是 v2 已知的"概念边界还没拉直"的地方。v2 当前实现先按"现状"运行（即旧设计），但前序章节中已经为下面的目标方案预留了字段（如 `WorkflowRun.run_kind`、CascadeState.fix_suggestion 的语义）。每条决定后再做一次 v3 重构。
+
+#### R1 Run 是"验证流程"还是"执行流程"——是否拆成两类
+
+**现状**：单一 `WorkflowRun` 聚合用 `pipeline_variant` 区分 `phase1_only / phase1_phase2 / full / phase3_direct`。一个字段同时承担"我要验证图设计"与"我要生成代码并跑测试"两种语义。
+
+**问题**：
+
+1. `final_verdict` 对 `phase1_only` Run 而言只表达"图是否符合规约"，对 `full` Run 表达"图 + 生成代码 + 沙箱测试是否全过"——同一个字段承载两种结论，下游消费者必须先看 variant 再看 verdict。
+2. SLA 不一样：验证类 Run 期望分钟级，代码生成类 Run 可以接受小时级；混在同一队列限流策略冲突。
+3. 重试策略不一样：验证可以幂等重跑，代码生成会消耗 token、产出 CodeSnapshot，重试要谨慎。
+
+**三个候选方案**：
+
+| 方案 | 描述 | 利 | 弊 |
+|-----|------|----|----|
+| **A. 保持单聚合** | 维持现状，只澄清 final_verdict 在 variant 维度的语义表 | 改动最小 | 概念混淆持续；下游必须 variant-aware |
+| **B. 加 RunKind 显化意图（已在 v2 文档中预埋字段）** | 单聚合 + `run_kind: VALIDATION / CODEGEN / FULL`；不同 kind 用不同队列、不同超时、不同 SLA | 数据模型不动；下游可仅消费一种 kind | run_kind 与 pipeline_variant 仍部分冗余 |
+| **C. 拆成两类聚合** | `ValidationRun`（绑 GraphVersion）与 `CodegenRun`（绑 PHASE1_PASSED 的 GraphVersion + 触发的 ValidationRun）；删 pipeline_variant | 语义最清晰；状态机可精简 | API/DB schema 大改；现有 phase3_direct 类需求要单独建模 |
+
+**推荐**：B（v2 已预埋）。它保留 §7.1 主状态机不变，只在调度/限流/重试这些"操作面"按 run_kind 分桶。
+
+**v2 → v3 迁移路径**（若采纳 B → 后续走 C）：
+
+```
+v2.x:
+  - WorkflowRun 已有 run_kind 字段（v2 修订）
+  - pipeline_variant 仍存在，由 run_kind 推导默认值
+  - 调度层按 run_kind 分队列：
+      VALIDATION → phase1_queue (高优、限流松)
+      CODEGEN    → phase2_queue + phase3_queue
+      FULL       → phase1_queue → 转 phase2_queue
+
+v3:
+  - 评估是否需要拆聚合（C 方案）
+  - 若拆：CodegenRun.parent_validation_run_id 关联，保证 PHASE1_PASSED 前置
+```
+
+---
+
+#### R2 Phase1 反思是"自动改图"还是"生成修改建议"
+
+**现状**（v2 文档 §4.2.6 / §7.13）：反思在 forest 副本上直接应用 `modifications`（`fix_spec` 改 field_values；`add_scenario` 追加场景），随后重跑 scenario_run。
+
+**问题**：
+
+1. **不可变破坏**：被验证的 forest 与用户保存的 GraphVersion 不再等价。"Phase1 通过"实际是"Phase1 在反思修改后的副本上通过"，用户回看图时看到的图未必能再次通过。
+2. **责任不清**：反思决定的 modifications 是否需要用户确认？什么场景下系统可自治？现有设计是无条件自治。
+3. **审计困难**：自动改的字段没有 GraphVersion 版本号，回溯链断裂。
+
+**两个候选方案**：
+
+| 方案 | 描述 | 利 | 弊 |
+|-----|------|----|----|
+| **S. suggest_only（推荐默认）** | 反思仅产出结构化 `ChangeSet`（写入 RunStep），不应用；Run 落 `phase1_verdict = inconclusive` + `suggested_changeset_id`；用户确认后由 API 创建新 GraphVersion 重跑 | 不可变性保留；审计完整；用户可选择 | 路径变长；自动 CI 场景需要额外 auto-apply 闸 |
+| **A. auto_apply（实验/批跑）** | 反思应用到副本并重跑；通过后**强制 fork 出新 GraphVersion**（不在原版本上声明 PHASE1_PASSED）；变更归属于"反思自动 fork" | CI/批跑友好 | 仍需独立 fork 逻辑；feature-flag 控制 |
+
+**推荐策略**：
+
+```
+默认 S 模式（suggest_only）；
+通过 feature-flag "phase1_reflection_auto_apply" + RunCreateDTO.options.reflection_mode = "auto_apply"
+显式启用 A 模式；
+A 模式下反思成功必须 fork 新 GraphVersion，原版本保持原状。
+```
+
+**影响章节**：§4.2.6 phase1-reflector、§7.13 状态机（GIVE_UP 含义改为"反思未能自动解决，已落 ChangeSet"）、§3.2.2 GraphVersion fork 接口、§6.1.5 pipeline-variant。
+
+---
+
+#### R3 Review 绑定 Run、GraphVersion，还是单独抽 Submission
+
+**现状**（v2 文档 §5.3.1）：`GraphReview.run_id` 绑 Run，但 APPROVED 时去更新 GraphVersion → FULLY_VALIDATED。Run 是过程对象（短命），评审主语放在 Run 上，导致：
+
+1. 同一 GraphVersion 可能多次触发 Run（重试、不同 variant）—— 哪个 Run 的评审有效？
+2. Run CANCELLED / FAILED 后，已开始的 Review 怎么办？
+3. NEEDS_REVISION 后用户改图触发新 Run，`GraphReview.run_id` 是否要更新？
+
+**三个候选方案**：
+
+| 方案 | 描述 | 利 | 弊 |
+|-----|------|----|----|
+| **a. Review 绑 Run（v2 现状）** | 不动 | 改动最小 | 上述三个问题持续 |
+| **b. Review 绑 GraphVersion** | review.graph_version_id；同一版本一个 review 实例 | 简单 | 仍解决不了"同版本反复重审"和"评审进行中版本被 archive"的语义 |
+| **c. 引入 Submission 聚合（推荐 v3）** | `Submission(graph_version_id, submitter, purpose)` 触发若干 Run；Review 绑 Submission；Submission APPROVED → GraphVersion → FULLY_VALIDATED | 边界最清晰；多次提审是新 Submission；Run 重试不影响 Review | 新增聚合 + API + 表；迁移工作量较大 |
+
+**推荐**：
+
+- v2 当前先做最小修补：移除 `WorkflowRun.review_status` 写入路径（已在 A13 中标记 deprecated），评审状态一律走 review-workflow 服务读，避免下游误用。
+- v3 引入 Submission：
+
+```python
+@dataclass
+class Submission:
+    id: str                            # sub_xxxxxxxx
+    graph_version_id: str              # 不可变
+    submitter_id: int
+    purpose: str                       # "release" | "internal_review" | "experiment"
+    status: SubmissionStatus           # OPEN | APPROVED | REJECTED | WITHDRAWN
+    review_id: str | None              # 关联的评审
+    triggered_run_ids: list[str]       # 此 Submission 触发的所有 Run
+    created_at: datetime
+
+# Review 改绑：review.submission_id 而非 review.run_id
+# GraphVersion → FULLY_VALIDATED 由 Submission APPROVED 驱动
+# NEEDS_REVISION：现有 Submission 保持 OPEN，用户修图后创建新 Submission
+```
+
+**影响章节**：§5.3.1 review-workflow、§7.8 GraphVersion 状态机（FULLY_VALIDATED 触发源换成 Submission）、§7.9 Review 状态机（绑定主语改名）、§6.1.1 API 路由新增 `/api/v1/submissions`。
+
+---
+
+### 10.8 v2 已落地修订（速查）
+
+> 与本节（§10.7）的"待决策"区分开：以下是 v2 评审中**已经动手改进文档**的条目，不需要二次确认。
+
+- A1–A14：所有"标题数 ≠ 实际数"、章节号错位、字段定义遗漏 — 见目录 / 各章节修正点
+- B1–B8：可靠性补丁集（fencing、引用计数补偿、outbox 统一、双通道取消、原子性、race 处理、deadline 链、退避策略）—— §8.0
+- C1–C12：分布式补丁集（队列实现、Pub/Sub vs Streams、缓存协议、idempotency 清理、并发约束、分片片键、single-flight、规范化、节点容错、容器强化、trace 透传、multi-region 留 v3）—— §8.0
+- D1–D6：扩展性补丁集（KPI 分级、CascadeState extensions、状态机表驱动、SandboxRuntime 双层抽象、migration 外部化、RBAC 统一）—— §8.0
+
+---
+
+*文档版本: v2.0（2026-04-28 修订）* *创建日期: 2026-04-27* *下次评审: D3A 规范确定 + R1/R2/R3 拍板后入 v3*
