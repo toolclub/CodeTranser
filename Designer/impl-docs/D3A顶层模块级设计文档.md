@@ -1,26 +1,59 @@
 # D3A 顶层模块级设计文档
 
-> **范围**：D3A 系统的顶层模块级设计 — 限界上下文、模块清单、状态机、分布式与可靠性、扩展机制。
+> **范围**：D3A 系统的端到端顶层设计——业务模型、限界上下文、模块清单、状态机、分布式与可靠性、扩展机制、数据库 Schema、代码生成映射。
 >
-> **读者**：架构 / 评审 / 实现负责人。
->
-> **约束**：本设计的承载体（结构、接口、状态机、可靠性骨架）由第 1–9 章给出；D3A 业务模型（MetaTemplate / CommandTemplate / EdgeTemplate / Cascade / Bundle / Forest / 影响传播 / 官方库 / 编辑器后端契约 / D3A→C++ 映射）由第 10 章落地；术语表 / 错误码 / 事件清单见第 11 章。
+> **读者**：架构 / 评审 / 后端实现负责人 / DBA。
+
+------
+
+## 文档结构与阅读路径
+
+文档按"由架构到业务、由抽象到具体"分五部分组织：
+
+| 部分 | 章节 | 内容 |
+|------|------|------|
+| Part I — 架构基线 | §1–§2 | 顶层架构、分层、限界上下文、分布式拓扑、模块清单 |
+| Part II — 模块详细设计 | §3–§6 | 各域聚合根、接口、Repository、应用层 saga 编排、集成层、横切关注点、基础设施 |
+| Part III — 状态机 / 可靠性 / 扩展性 | §7–§9 | 状态机规约、outbox / deadline 透传 / 断路器、插件注册体系 |
+| Part IV — D3A 业务模型与数据库 | §10 | D3A 业务建模（MetaTemplate / CommandTemplate / EdgeTemplate / Cascade / Bundle / Forest）、表达式 DSL、完整 MySQL 5.7 DDL、影响传播、官方模板库、编辑器契约、D3A → C/C++ 映射、模拟器子系统 |
+| Part V — 附录 | §11 | 术语 / 错误码 / 事件总表 / 完成度自检 |
+
+### 推荐阅读路径
+
+- **架构评审**：Part I → §7.0 状态机联动总图 → §10.1 概念层级 → §10.3 设计决策。
+- **后端实现**：Part I → 模块所属章节（§3 / §4 / §5 / §6）→ §7 对应状态机 → §10 对应业务规则。
+- **DBA / 数据迁移**：§10.4 数据库设计原则 → §10.11 完整 DDL（含 MySQL 5.7 触发器）→ §10.12 影响传播。
+- **前端 / 编辑器**：§10.9 Forest 数据结构契约 → §10.14 编辑器后端契约 → §10.10 表达式 DSL。
 
 ------
 
 ## 目录
 
+### Part I — 架构基线
+
 - [第 1 章 顶层架构与分布式视图](#第-1-章-顶层架构与分布式视图)
-- [第 2 章 模块清单（63 个模块）](#第-2-章-模块清单63-个模块)
-- [第 3 章 Node/Graph 域模块详细设计](#第-3-章-nodegraph-域模块详细设计)
-- [第 4 章 Execution/Phase1 域模块详细设计](#第-4-章-executionphase1-域模块详细设计)
-- [第 5 章 Phase2/Phase3/Review 域模块详细设计](#第-5-章-phase2phase3review-域模块详细设计)
+- [第 2 章 模块清单](#第-2-章-模块清单)
+
+### Part II — 模块详细设计
+
+- [第 3 章 Node / Graph 域模块详细设计](#第-3-章-node--graph-域模块详细设计)
+- [第 4 章 Execution / Phase1 域模块详细设计](#第-4-章-executionphase1-域模块详细设计)
+- [第 5 章 Phase2 / Phase3 / Review 域模块详细设计](#第-5-章-phase2phase3review-域模块详细设计)
 - [第 6 章 应用层 / 集成层 / 横切关注点 / 基础设施](#第-6-章-应用层--集成层--横切关注点--基础设施)
-- [第 7 章 16 个状态机完整规约](#第-7-章-16-个状态机完整规约)
+
+### Part III — 状态机 / 可靠性 / 扩展性
+
+- [第 7 章 状态机完整规约](#第-7-章-状态机完整规约)
 - [第 8 章 分布式与可靠性设计](#第-8-章-分布式与可靠性设计)
 - [第 9 章 扩展性机制](#第-9-章-扩展性机制)
+
+### Part IV — D3A 业务模型与数据库设计
+
 - [第 10 章 D3A 业务模型与数据库设计](#第-10-章-d3a-业务模型与数据库设计)
-- [第 11 章 D3A 业务落地 / 术语 / 错误码 / 事件总表](#第-11-章-d3a-业务落地--术语--错误码--事件总表)
+
+### Part V — 附录
+
+- [第 11 章 术语 / 错误码 / 事件总表 / 完成度自检](#第-11-章-术语--错误码--事件总表--完成度自检)
 
 ------
 
@@ -462,7 +495,7 @@ sequenceDiagram
 
 ------
 
-## 第 2 章 模块清单（63 个模块）
+## 第 2 章 模块清单
 
 ### 2.1 全模块目录
 
@@ -542,10 +575,27 @@ sequenceDiagram
 | 11.3                                                         | redis-pubsub        | Infra       | -          | Python | shared lib  | redis-py                                |
 | 11.4                                                         | docker-driver       | Infra       | -          | Python | shared lib  | docker SDK                              |
 | 11.5                                                         | schema-migration    | Infra       | -          | Python | CLI + Cron  | alembic                                 |
+| **L1 Domain — D3A 业务（16 个；详见 §10）**                  |                     |             |            |        |             |                                         |
+| 12.1                                                         | meta-template       | Domain      | MetaTemplate | Python | API+Worker | ★MetaTemplateRepositoryPort              |
+| 12.2                                                         | command-template-engine | Domain  | Command    | Python | API+Worker  | ★CommandTemplateRepositoryPort, meta-template |
+| 12.3                                                         | command-property-evaluator | Domain | Command | Python | shared lib | -                                       |
+| 12.4                                                         | edge-template       | Domain      | Edge       | Python | API+Worker  | ★EdgeTemplateRepositoryPort              |
+| 12.5                                                         | cascade-validator   | Domain      | Graph      | Python | shared lib  | dag-compute                             |
+| 12.6                                                         | forest-snapshot-builder | Domain  | Graph      | Python | API+Worker  | forest-snapshot, command-template-engine |
+| 12.7                                                         | template-impact-analyzer | Domain | Graph + Command | Python | API+Worker | ★TemplateUsageIndexPort                |
+| 12.8                                                         | forest-template-library | Domain  | Graph      | Python | API         | forest-snapshot, auth-rbac              |
+| 12.9                                                         | forest-promotion-workflow | App   | Review     | Python | API         | ★ForestPromotionRepositoryPort           |
+| 12.10                                                        | d3a-codegen-target  | Integration | Phase2     | Python | shared lib  | meta-template, codegen-target           |
+| 12.11                                                        | command-simulator   | Domain      | Command    | Python | Worker      | command-property-evaluator, llm-agent-loop |
+| 12.12                                                        | cascade-simulator   | Domain      | Graph      | Python | Worker      | command-simulator                       |
+| 12.13                                                        | edge-resolver       | Domain      | Graph      | Python | shared lib  | edge-template                           |
+| 12.14                                                        | dag-runner          | Domain      | Graph      | Python | Worker      | cascade-simulator, edge-resolver        |
+| 12.15                                                        | bundle-simulator    | Domain      | Graph + Phase2 | Python | Worker | dag-runner                              |
+| 12.16                                                        | forest-runner       | Domain      | Phase1     | Python | Worker      | dag-runner, scenario-comparator         |
 
-> **统计**：领域层 38 + 应用层 7 + 集成层 6 + 横切面 7 + 基础设施 5 = **63 个模块**（不含 Port 接口定义；Cross-Cutting 7 个为正交维度，非分层）
+> **统计**：领域层 54 + 应用层 8 + 集成层 7 + 横切面 7 + 基础设施 5 = **79 个模块**（Cross-Cutting 7 个为正交维度，非分层）
 >
-> **Domain 38** = Node 5 + Graph 5 + Execution 6 + Phase1 7 + Phase2 5 + Phase3 7 + Review 3
+> **Domain 54** = Node 5 + Graph 5 + Execution 6 + Phase1 7 + Phase2 5 + Phase3 7 + Review 3 + D3A 业务 16
 >
 > **Port 接口说明**：标注 ★ 的依赖表示领域层定义了抽象 Port 接口（ABC），由基础设施层或集成层提供具体实现，通过 DI 注入。领域代码中 **import 的是 Port ABC，不是 mysql-store/redis-pubsub 等具体模块**。
 
@@ -637,7 +687,9 @@ sequenceDiagram
 
 ------
 
-## 第 3 章 Node/Graph 域模块详细设计
+## 第 3 章 Node / Graph 域模块详细设计
+
+> 本章定义 Node 域（节点模板与模拟器接口的承载体）与 Graph 域（森林结构、版本快照、DAG 计算）的通用承载体。D3A 业务把 Node 域具体化为 MetaTemplate / CommandTemplate / EdgeTemplate（§10.6–§10.8），把 Graph 域具体化为 Cascade / Bundle / Forest 平铺数据结构与编辑契约（§10.9 / §10.14）。
 
 ### 3.1 Node 域模块（5 个）
 
@@ -652,7 +704,7 @@ sequenceDiagram
   2. 校验模板定义的合法性（input/output schema 自洽、edge_semantics 不重复）
   3. 计算定义哈希用于版本去重
   4. 提供 `freeze_to_snapshot()` 方法供图保存时冻结模板
-  5. **D3A 留白点**：`NodeTemplateDefinition` 是结构稳定的载体，具体 D3A 节点的字段定义后续作为数据填入
+  5. 模板定义体作为结构稳定的载体；具体 D3A 指令的字段定义按 §10.6 / §10.7 的模型作为数据填入（不进代码）
 - **关键模型**
 
 ```python
@@ -885,7 +937,7 @@ class NodeSimulatorFactory:
   2. 模板的发布、废弃、复制、Fork 操作
   3. 模板的搜索、分类、标签
   4. 模板的导入导出（JSON Pack）
-  5. **D3A 留白点**：内置 D3A 模板包作为种子数据，可后续填充
+  5. 内置 D3A 官方模板包作为种子数据（详见 §10.13 官方模板库）
 - **公开接口**
 
 ```python
@@ -1293,28 +1345,50 @@ class ValidationRun:
 - **DB 约束（在 schema 层强制语义，不靠应用层 if/else）**
 
   ```sql
+  -- MySQL 5.7 适配：CHECK 不强制 → 触发器；partial index 不支持 → 双列索引（详见 §10.11.0）
   CREATE TABLE t_validation_run (
       ...
       graph_version_id VARCHAR(32) NOT NULL,
       status ENUM('pending','running','success','failed','cancelled') NOT NULL,
       phase1_verdict ENUM('valid','invalid','inconclusive_with_changeset') NULL,
       changeset_id VARCHAR(32) NULL,
+      lease_expires_at DATETIME(6) NULL,
       ...
       CONSTRAINT fk_vr_graph_version FOREIGN KEY (graph_version_id)
           REFERENCES t_graph_version(id),
       CONSTRAINT fk_vr_changeset FOREIGN KEY (changeset_id)
           REFERENCES t_changeset(id),
-      -- 终态一致性：终态必有 phase1_verdict；INCONCLUSIVE_WITH_CHANGESET 必有 changeset_id
-      CONSTRAINT ck_vr_terminal CHECK (
-          (status IN ('pending','running','cancelled')) OR
-          (status IN ('success','failed') AND phase1_verdict IS NOT NULL)
-      ),
-      CONSTRAINT ck_vr_changeset CHECK (
-          (phase1_verdict <> 'inconclusive_with_changeset') OR (changeset_id IS NOT NULL)
-      ),
-      INDEX idx_vr_gv (graph_version_id, created_at),
-      INDEX idx_vr_lease (lease_expires_at) WHERE status = 'running'
+      KEY idx_vr_gv    (graph_version_id, created_at),
+      KEY idx_vr_lease (status, lease_expires_at)        -- 替代 partial WHERE：status 前置过滤
   );
+
+  -- 终态一致性 + INCONCLUSIVE_WITH_CHANGESET 必有 changeset_id（替代 CHECK 约束）
+  DELIMITER //
+  CREATE TRIGGER trg_vr_validate BEFORE INSERT ON t_validation_run
+  FOR EACH ROW
+  BEGIN
+      IF NEW.status IN ('success','failed') AND NEW.phase1_verdict IS NULL THEN
+          SIGNAL SQLSTATE '45000'
+              SET MESSAGE_TEXT = 'ValidationRun terminal status requires phase1_verdict';
+      END IF;
+      IF NEW.phase1_verdict = 'inconclusive_with_changeset' AND NEW.changeset_id IS NULL THEN
+          SIGNAL SQLSTATE '45000'
+              SET MESSAGE_TEXT = 'INCONCLUSIVE_WITH_CHANGESET requires changeset_id';
+      END IF;
+  END//
+  CREATE TRIGGER trg_vr_validate_upd BEFORE UPDATE ON t_validation_run
+  FOR EACH ROW
+  BEGIN
+      IF NEW.status IN ('success','failed') AND NEW.phase1_verdict IS NULL THEN
+          SIGNAL SQLSTATE '45000'
+              SET MESSAGE_TEXT = 'ValidationRun terminal status requires phase1_verdict';
+      END IF;
+      IF NEW.phase1_verdict = 'inconclusive_with_changeset' AND NEW.changeset_id IS NULL THEN
+          SIGNAL SQLSTATE '45000'
+              SET MESSAGE_TEXT = 'INCONCLUSIVE_WITH_CHANGESET requires changeset_id';
+      END IF;
+  END//
+  DELIMITER ;
   ```
 
 - **公开接口**
@@ -1474,8 +1548,9 @@ class CodegenRun:
           REFERENCES t_graph_version(id),
       CONSTRAINT fk_cr_parent_vr FOREIGN KEY (parent_validation_run_id)
           REFERENCES t_validation_run(id),
-      INDEX idx_cr_gv (graph_version_id, created_at),
-      INDEX idx_cr_lease (lease_expires_at) WHERE status = 'running'
+      KEY idx_cr_gv    (graph_version_id, created_at),
+      -- MySQL 5.7 不支持 partial WHERE index → 用 status 前置的双列索引
+      KEY idx_cr_lease (status, lease_expires_at)
   );
 
   -- 触发器：插入前校验 graph_version 状态（DB 层强制前置，不依赖应用层判断）
@@ -2382,22 +2457,44 @@ class ChangeSet:
 - **DB 约束**
 
   ```sql
+  -- MySQL 5.7 适配：CHECK 不强制 → 触发器；FK 关键字修正为 FOREIGN KEY
   CREATE TABLE t_changeset (
       ...
       content_hash CHAR(64) NOT NULL,
       base_graph_version_id VARCHAR(32) NOT NULL,
       source_validation_run_id VARCHAR(32) NOT NULL,
+      status ENUM('open','applied','discarded') NOT NULL DEFAULT 'open',
+      applied_to_graph_version_id VARCHAR(32) NULL,
+      applied_validation_run_id   VARCHAR(32) NULL,
       ...
       UNIQUE KEY uk_chgset_dedup (base_graph_version_id, content_hash),
-      CONSTRAINT fk_chgset_base FK (base_graph_version_id) REFERENCES t_graph_version(id),
-      CONSTRAINT fk_chgset_source FK (source_validation_run_id) REFERENCES t_validation_run(id),
-      CONSTRAINT fk_chgset_applied_gv FK (applied_to_graph_version_id) REFERENCES t_graph_version(id),
-      CONSTRAINT fk_chgset_applied_vr FK (applied_validation_run_id) REFERENCES t_validation_run(id),
-      CONSTRAINT ck_chgset_apply CHECK (
-          (status <> 'applied') OR
-          (applied_to_graph_version_id IS NOT NULL AND applied_validation_run_id IS NOT NULL)
-      )
+      CONSTRAINT fk_chgset_base       FOREIGN KEY (base_graph_version_id)       REFERENCES t_graph_version(id),
+      CONSTRAINT fk_chgset_source     FOREIGN KEY (source_validation_run_id)    REFERENCES t_validation_run(id),
+      CONSTRAINT fk_chgset_applied_gv FOREIGN KEY (applied_to_graph_version_id) REFERENCES t_graph_version(id),
+      CONSTRAINT fk_chgset_applied_vr FOREIGN KEY (applied_validation_run_id)   REFERENCES t_validation_run(id)
   );
+
+  -- 不变式：APPLIED 时 applied_to_graph_version_id / applied_validation_run_id 必填
+  DELIMITER //
+  CREATE TRIGGER trg_chgset_validate BEFORE INSERT ON t_changeset
+  FOR EACH ROW
+  BEGIN
+      IF NEW.status = 'applied'
+         AND (NEW.applied_to_graph_version_id IS NULL OR NEW.applied_validation_run_id IS NULL) THEN
+          SIGNAL SQLSTATE '45000'
+              SET MESSAGE_TEXT = 'ChangeSet APPLIED requires applied_to_graph_version_id AND applied_validation_run_id';
+      END IF;
+  END//
+  CREATE TRIGGER trg_chgset_validate_upd BEFORE UPDATE ON t_changeset
+  FOR EACH ROW
+  BEGIN
+      IF NEW.status = 'applied'
+         AND (NEW.applied_to_graph_version_id IS NULL OR NEW.applied_validation_run_id IS NULL) THEN
+          SIGNAL SQLSTATE '45000'
+              SET MESSAGE_TEXT = 'ChangeSet APPLIED requires applied_to_graph_version_id AND applied_validation_run_id';
+      END IF;
+  END//
+  DELIMITER ;
   ```
 
 - **公开接口**
@@ -2483,7 +2580,7 @@ class ChangeSetRepository(ABC):
   3. 确定节点实例 → 函数/方法的映射规则
   4. 确定边 → 调用/跳转关系
   5. 输出 `CodeSkeleton`（代码结构规划结果，供 code-generator 使用）
-  6. **D3A 留白点**：映射规则目前是抽象的，具体 D3A 指令到 C++ 代码的映射模板后续填充
+  6. 具体 D3A 指令 → C/C++ 的映射规则封装在 `d3a-codegen-target`（详见 §10.15）
 - **关键模型**
 
 ```python
@@ -2532,7 +2629,7 @@ class CodePlannerStep(BasePipelineStep):
   1. 对每个 Bundle，调用 `codegen-target` 按模板生成代码片段
   2. 对每个 NodeInstance，调用 LLM 生成节点内联代码（使用 `template_snapshot.code_hints`）
   3. 输出 `CodeUnit` 列表
-  4. **D3A 留白点**：具体 D3A 节点 → C++ 代码的 prompt 模板和生成规则在 `codegen-target` 中预留
+  4. 具体 D3A 命令 → C++ 代码的 prompt 模板由 `d3a-codegen-target` 提供（详见 §10.15）
 - **关键模型**
 
 ```python
@@ -2591,7 +2688,7 @@ class CodeGeneratorStep(BasePipelineStep):
   2. 生成 `main.cpp` / `CMakeLists.txt` 等工程文件
   3. 输出 `composite_code: dict[str, str]`（filepath → content）
   4. 生成编译命令和参数
-  5. **D3A 留白点**：主函数模板、D3A 入口点模板后续填充
+  5. 主函数模板、D3A 入口点模板由 `d3a-codegen-target` 提供（详见 §10.15.6）
 - **公开接口**
 
 ```python
@@ -2688,7 +2785,7 @@ class CodeSnapshotRepository:
   1. 定义 `CodegenTarget` 接口（抽象层，不绑定具体语言）
   2. 提供 `CppCodegenTarget` 默认实现
   3. 管理代码模板（文件模板、类模板、函数签名模板）
-  4. **D3A 留白点**：D3A 指令 → C++ 代码的具体映射模板在此定义和加载
+  4. D3A 指令 → C++ 代码的具体映射模板在此定义和加载（实现见 §10.15）
   5. 版本化的目标语言定义（同一 Target 可有多个版本）
 - **关键模型**
 
@@ -2930,7 +3027,7 @@ class SandboxExecutorStep(BasePipelineStep):
 - **核心职责**
   1. 基于 Phase1 的场景执行结果，合成 Phase3 沙箱用例
   2. 生成 `SandboxCase` 列表（input_bytes / input_spec + expected）
-  3. **D3A 留白点**：D3A 格式的用例合成规则（如输入二进制格式、expected 格式）后续填充
+  3. D3A 输入二进制格式、expected 格式由 `d3a-codegen-target` 与 case-synthesizer 协同定义（详见 §10.15）
   4. 保证用例覆盖度（每个 DAG 路径至少一个用例）
 - **关键模型**
 
@@ -4636,7 +4733,7 @@ class LLMCostGovernor:
 
 ------
 
-## 第 7 章 16 个状态机完整规约
+## 第 7 章 状态机完整规约
 
 > **每个状态机的规范格式：**
 >
@@ -5585,13 +5682,13 @@ stateDiagram-v2
 | OPEN | discard | DISCARDED | 乐观锁：`UPDATE WHERE status='open'` |
 | OPEN | base GraphVersion → ARCHIVED | DISCARDED | 由 GraphVersionArchived 事件消费者推 |
 
-#### 不变式（DB 层强制）
+#### 不变式（DB 层强制；MySQL 5.7 用触发器代替 CHECK）
 
 ```
 1. UNIQUE KEY (base_graph_version_id, content_hash) → content-addressed 去重
-2. CHECK (status<>'applied' OR (applied_to_graph_version_id IS NOT NULL
-                                AND applied_validation_run_id IS NOT NULL))
-3. APPLIED / DISCARDED 为终态（DB CHECK 拒绝逆向更新）
+2. APPLIED 时 applied_to_graph_version_id / applied_validation_run_id 必填
+   （由 trg_chgset_validate / trg_chgset_validate_upd 触发器强制；见 §4.2.7 DB 约束块）
+3. APPLIED / DISCARDED 为终态（由应用层状态机 + 乐观锁保证；DB 层不允许从终态向 OPEN 回退）
 4. 基线 GraphVersion 不可被 ChangeSet 直接修改（apply 一定 fork 新版本）
 ```
 
@@ -6442,15 +6539,18 @@ async def create_run(): ...
 
 ### 9.1 插件注册体系总览
 
-| 扩展点          | 接口/基类               | 注册位置                           | 示例                 |
-| --------------- | ----------------------- | ---------------------------------- | -------------------- |
-| 新 Handler      | `HandlerStep` 子类      | `HandlerRegistry.register()`       | `coverage_check`     |
-| 新 Simulator    | `NodeSimulator` 子类    | `NodeSimulatorFactory.register()`  | `WasmSimulator`      |
-| 新 Validator    | `ForestVisitor` 子类    | `VisitorRegistry.register()`       | `D3ANamingCheck`     |
-| 新 LLM Provider | `LLMProvider` 子类      | `LLMProviderFactory.register()`    | `GeminiProvider`     |
-| 新代码生成目标  | `CodegenTarget` 子类    | `CodegenTargetFactory.register()`  | `RustCodegenTarget`  |
-| 新沙箱运行时    | `SandboxRuntime` 子类   | `SandboxRuntimeFactory.register()` | `FirecrackerRuntime` |
-| 新 Phase        | `BasePipelineStep` 子类 | `PipelineBuilder` 装配             | `Phase4PerfTest`     |
+| 扩展点 | 接口 / 基类 | 注册位置 | 示例 |
+| ------ | ----------- | -------- | ---- |
+| Handler（Phase1） | `HandlerStep` 子类 | `HandlerRegistry.register()` | `coverage_check` |
+| CommandSimulator | `CommandSimulator` 子类（§10.19.4） | `CommandSimulatorFactory.register()` | `WasmCommandSimulator` |
+| ForestVisitor | `ForestVisitor` 子类 | `VisitorRegistry.register()` | `D3ANamingCheck` |
+| LLM Provider | `LLMProvider` 子类 | `LLMProviderFactory.register()` | `GeminiProvider` |
+| CodegenTarget | `CodegenTarget` 子类 | `CodegenTargetFactory.register()` | `RustCodegenTarget` |
+| SandboxRuntime | `SandboxRuntime` 子类 | `SandboxRuntimeFactory.register()` | `FirecrackerRuntime` |
+| Pipeline Phase | `BasePipelineStep` 子类 | `PipelineBuilder` 装配 | `Phase4PerfTest` |
+| MetaTemplate Type Kind | `TypeRef.kind` 扩充 | `meta-template` 类型注册表 | 新增 `bitmask` 类型 |
+| EdgeTemplate Category | `EdgeTemplate.category` 扩充 + 子类 `SemanticConstraints` | `edge-template` 注册表 | 新增 `dataflow` 类别 |
+| ChangeSet Modification 类型 | `ModificationType` 扩充 | `changeset` 模块 | 新增 `restructure_cascade` |
 
 ### 9.2 Handler 扩展（示例：新增 coverage_check）
 
@@ -6598,13 +6698,9 @@ else:
 
 ## 第 10 章 D3A 业务模型与数据库设计
 
-> **本章定位**：把第 1–9 章定义的"承载体"（聚合根接口、状态机、saga、可靠性骨架）填充为具体的 D3A 业务概念。本章替换原顶层文档中标注为 TBD 的 D3A 留白项；与原文档的命名（NodeTemplate / CascadeForest / NodeInstance）保持兼容——本章使用业务术语（CommandTemplate / Forest / CommandInstance），二者在代码层面是同一聚合根，名称只是语义对齐。
->
-> **修订记录**：v1.0（2026-05-06）— 初版，对应原 §11.1（旧 §10.1）的 6 项留白全部落地。
+> 本章给出 D3A 的业务建模、表达式 DSL、完整 MySQL 5.7 兼容 DDL、影响传播工作流、官方模板库流程、编辑器后端契约、D3A → C/C++ 代码生成映射、以及模拟器子系统。第 3–6 章的聚合根接口在本章具体化为 D3A 的 MetaTemplate / CommandTemplate / EdgeTemplate / Cascade / Bundle / Forest 等业务对象。
 
----
-
-### 10.1 全局概念层级总图
+### 10.1 概念层级总图
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -6654,20 +6750,18 @@ else:
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 10.2 与第 1–9 章命名对照
+### 10.2 聚合根 / 限界上下文 / 模块归属
 
-| 第 1–9 章（顶层承载体） | 本章（D3A 业务模型） | 关系 |
-|------|------|------|
-| `NodeTemplate` | `CommandTemplate` | 同一个聚合根；本章用业务术语。原文 NodeTemplate 的 `extensions` 字段承载本章的 `properties_schema` |
-| `NodeInstance` | `CommandInstance` | 同一个实体 |
-| `Bundle` | `Bundle` | 不变（用户在画布上框出来的级跳分组） |
-| 原文无对应 | **`Cascade`（级跳）** | **新增层级**——位于 Bundle 与 CommandInstance 之间，是连线端点的最小单位 |
-| `Edge` | `EdgeInstance` + `EdgeTemplate` | 拆分：边实例（在 Forest 内）+ 边模板（管理员定义） |
-| `CascadeForest` | `Forest` | 同一聚合根；命名简化 |
-| 原文无对应 | **`MetaTemplate`** | **新增聚合根**——CommandTemplate 与 EdgeTemplate 都引用 MetaTemplate 的类型字典 |
-| `node-library` | 拆分为 `command-template-library` + `forest-template-library` | 模板库与森林模板库分离（前者积木、后者组装好的工作流） |
-
-> 第 1–9 章的代码标识符（NodeTemplate 等）保留有效，本章不要求重命名。命名对齐仅用于业务沟通；DB 表 / API 路径统一使用业务术语（`command_template`、`forest`、`cascade`）。
+| 限界上下文 | 聚合根 / 关键值对象 | 归属模块 |
+|-----------|---------------------|---------|
+| **MetaTemplate**（类型字典） | `MetaTemplate` / `MetaTemplateVersion` / `EnumTypeDef` / `ValueTypeDef` / `CompositeTypeDef` / `VariableSlotDef` / `TypeRef` | meta-template (§10.5) |
+| **Command**（指令模板与实例） | `CommandTemplate` / `CommandTemplateVersion` / `PropertyDef` / `ExprNode` / `CommandInstance` / `PropertyValue` | command-template-engine、command-template-registry、command-property-evaluator、command-template-library、command-simulator |
+| **Edge**（边模板与实例） | `EdgeTemplate` / `EdgeTemplateVersion` / `SemanticConstraints` / `EdgeInstance` | edge-template、edge-resolver |
+| **Graph**（森林） | `Forest` / `ForestVersion` / `Cascade` / `Bundle` | forest-snapshot、forest-snapshot-builder、cascade-validator、cascade-simulator、dag-runner、bundle-simulator、forest-runner、forest-template-library、forest-diff、dag-compute、forest-visitor |
+| **Execution / Phase1 / Phase2 / Phase3** | `ValidationRun` / `CodegenRun` / `RunStep` / `ChangeSet` 等 | 同 §3.3 / §4 / §5 |
+| **Review** | `Submission` / `Review` / `ReviewComment` / `ForestPromotion` | submission、review-workflow、review-comment、forest-promotion-workflow |
+| **Application（saga 编排层）** | `PipelineRequest` / `PipelineStep` | pipeline-orchestrator、pipeline-builder、worker-runtime、idempotency |
+| **Integration（抗腐层）** | `LLMProvider` / `SandboxRuntime` 接口 | llm-provider、llm-tool-use、llm-output-schema、llm-prompt-cache、llm-agent-loop、sandbox-runtime、d3a-codegen-target |
 
 ### 10.3 关键设计决策
 
@@ -6681,7 +6775,7 @@ else:
 | 表达式 DSL（option/type_option）如何执行 | **AST + 解释器（纯函数）** | 安全性 + 跨语言可移植（前端 TS 预校验 + 后端 Python 正式校验，结果一致） |
 | 模板变更如何通知 forest | **Impact Index + 异步级联 fork** | 不强制立即升级；提示所有者并提供一键迁移 |
 
-### 10.4 数据库设计原则（本章特有）
+### 10.4 数据库设计原则
 
 | 原则 | 落地手段 |
 |------|---------|
@@ -6691,30 +6785,28 @@ else:
 | **平铺优先于嵌套** | Forest 子结构（Cascade / Bundle / Edge / CommandInstance）平铺到独立表；同时 `forest_version.snapshot_json` 冗余存全量 JSON 给前端一次拉取 |
 | **版本号单调** | `(parent_id, version_number)` 唯一约束 + 行级锁 |
 | **软删除而非物理删除** | 用户可见数据带 `deleted_at`；物理删除由 GC 任务做（90 天保留） |
-| **新增字段优先于修改字段** | 字段拆分原则：先拆 JSON column，确认稳定后再升列；`schema_version` 字段贯穿所有快照 |
+| **加字段优先于改字段** | 字段拆分原则：先拆 JSON column，确认稳定后再升列；`schema_version` 字段贯穿所有快照 |
 
-### 10.5 模块清单（本章新增 16 个；总数 63 → 79）
+### 10.5 D3A 业务域模块清单
 
-> §10.6–§10.15 / §10.21 共 16 个模块；其中 §10.21 Tool 子系统重写新增 6 个。
+> 归属与 §2.1 表对齐；模拟器子系统的 6 个模块单独列于 §10.19.2。
 
-> 归属与第 2.1 表对齐：
-
-| # | 模块 | 层级 | 限界上下文 | 对应原文章节 |
-|---|------|------|-----------|-----------|
-| 12.1 | meta-template | Domain | MetaTemplate（新增 BC） | 新增 |
-| 12.2 | command-template-engine | Domain | Command（重命名 Node） | 替代 §3.1.1 |
-| 12.3 | command-property-evaluator | Domain | Command | 新增（实现 option/type_option DSL） |
-| 12.4 | edge-template | Domain | Edge（新增 BC） | 新增 |
-| 12.5 | cascade-validator | Domain | Graph | 扩展 §3.2.1 |
-| 12.6 | forest-snapshot-builder | Domain | Graph | 扩展 §3.2.2 |
-| 12.7 | template-impact-analyzer | Domain | Graph + Command | 新增 |
-| 12.8 | forest-template-library | Domain | Graph | 替代/补充 §3.1.4 |
-| 12.9 | forest-promotion-workflow | App | Review | 新增（提审为官方模板） |
-| 12.10 | d3a-codegen-target | Integration | Phase2 | 替代 §5.1.5 中 D3A 留白部分 |
+| # | 模块 | 层级 | 限界上下文 | 详细设计 |
+|---|------|------|-----------|---------|
+| 12.1 | meta-template | Domain | MetaTemplate | §10.6 |
+| 12.2 | command-template-engine | Domain | Command | §10.7 |
+| 12.3 | command-property-evaluator | Domain | Command | §10.10 |
+| 12.4 | edge-template | Domain | Edge | §10.8 |
+| 12.5 | cascade-validator | Domain | Graph | §10.9 |
+| 12.6 | forest-snapshot-builder | Domain | Graph | §10.9 + §10.11 |
+| 12.7 | template-impact-analyzer | Domain | Graph + Command | §10.12 |
+| 12.8 | forest-template-library | Domain | Graph | §10.13 |
+| 12.9 | forest-promotion-workflow | App | Review | §10.13 |
+| 12.10 | d3a-codegen-target | Integration | Phase2 | §10.15 |
 
 ---
 
-### 10.6 MetaTemplate 域（新增 BC）
+### 10.6 MetaTemplate 域
 
 #### 10.6.1 限界上下文与职责
 
@@ -6860,7 +6952,7 @@ class MetaTemplateService:
 
 ---
 
-### 10.7 CommandTemplate 域（细化 §3.1 Node 域）
+### 10.7 CommandTemplate 域
 
 #### 10.7.1 限界上下文与职责
 
@@ -6908,6 +7000,11 @@ class CommandTemplateVersion:
     version_number: int
     content_hash: str
     meta_template_version_id: str # 锁定的 MetaTemplate 版本
+    
+    # 硬件操作码（如原型中的 #0x02 / #0xA0）
+    # main_struct 必填；action_struct 可选（部分 action 是纯软件标记，无 opcode）
+    opcode: str | None
+    
     properties: tuple[PropertyDef, ...]
     codegen_hints: CodegenHints
     display_hints: DisplayHints
@@ -7048,7 +7145,7 @@ class DisplayHints:
 
 ---
 
-### 10.8 EdgeTemplate 域（新增 BC）
+### 10.8 EdgeTemplate 域
 
 #### 10.8.1 限界上下文与职责
 
@@ -7151,8 +7248,8 @@ class EdgeDisplayHints:
 #### 10.9.1 数据结构总图
 
 ```
-Forest（聚合根，原 CascadeForest）
-  ├─ ForestVersion（不可变快照，原 GraphVersion）
+Forest（聚合根）
+  ├─ ForestVersion（不可变快照）
   │    snapshot_json: 整个 forest 的扁平 JSON（前端一次拉取，后端冗余存储）
   │    + 平铺到独立表保证可索引：
   │       ├─ Cascade            （表 t_cascade，FK forest_version_id）
@@ -7195,6 +7292,15 @@ class CommandInstance:
     
     property_values: Mapping[str, PropertyValue]
     
+    # 终止标记（仅对 role=action 有效；对应原型中 action 上的 return / jump-out badge）
+    # - None       : 普通 action，可作为 edge source
+    # - "return"   : 该 action 触发"返回上下文"语义；不允许作为 edge source（前端不画线）
+    # - "jump_out" : 该 action 触发"跳出 forest"语义（如跳到 core_net）；不允许作为 edge source
+    # - "terminal" : 该 action 是 cascade 的终结点；不允许作为 edge source
+    terminal_marker: Literal["return", "jump_out", "terminal"] | None
+    # 仅当 terminal_marker = "jump_out" 时填，记录跳出目标（自由文本 / 外部 forest 名 / 子系统名）
+    jump_target: str | None
+    
     validation_state: Literal["valid", "invalid", "incomplete"]
     validation_errors: tuple[ValidationIssue, ...]
     
@@ -7210,13 +7316,20 @@ class PropertyValue:
 
 @dataclass(frozen=True)
 class Bundle:
-    """Bundle：用户框选的级跳分组（代码生成 → 1 对象）"""
+    """Bundle：用户框选的级跳分组（代码生成 → 1 对象）。
+    Bundle 之间允许嵌套（原型中 inner_helper 嵌在 outer_recovery 内部）：
+      - 嵌套关系通过 parent_bundle_id 形成树
+      - 一个 cascade 通过 t_bundle_cascade UNIQUE 关联到"最内层"的 bundle
+      - 渲染时用 parent 链推算 cascade 同时归属外层 bundle
+    """
     id: str                       # bd_xxxxxxxx
     forest_version_id: str
+    parent_bundle_id: str | None  # 父 bundle；None 表示顶层 bundle
     name: str
     description: str
-    cascade_ids: tuple[str, ...]  # 不允许跨 bundle 重叠
+    cascade_ids: tuple[str, ...]  # 直接关联到本 bundle（最内层；外层 bundle 通过子树聚合获得）
     codegen_class_name: str
+    nesting_depth: int            # 0 = 顶层；冗余存储，由 parent 链计算（保存时落库，供前端布局）
     extensions: Mapping[str, Any]
 
 @dataclass(frozen=True)
@@ -7257,93 +7370,169 @@ class SourceEndpoint:
 | 8 | CommandInstance 引用的模板版本必须 ACTIVE 或被同 forest_version 锁定 | 应用校验 |
 | 9 | PropertyValue.kind = variable_ref 时，模板对应 PropertyDef.allow_variable = true | command-property-evaluator 校验 |
 | 10 | 当某 PropertyDef.presence_condition 不满足时，该 property 必须 absent | command-property-evaluator 校验 |
+| 11 | Bundle.parent_bundle_id 链必须无环；嵌套深度 ≤ 5（防止意外深层嵌套，可在 §10.16 系统配置中调整） | DB 触发器（递归探测） + 应用层校验 |
+| 12 | 同一 cascade 不允许直接关联多个 bundle（仍由 t_bundle_cascade.cascade_id UNIQUE 保证） | DB UNIQUE |
+| 13 | terminal_marker 不为 NULL 的 CommandInstance 必须 role='action'，且不允许作为 EdgeInstance.source（即原型中 return / jump_out 不画线） | DB 触发器 |
+| 14 | terminal_marker = 'jump_out' 时 jump_target 必填；其他取值时 jump_target 必为 NULL | DB 触发器 |
 
 #### 10.9.4 完整 forest_version.snapshot_json 结构（前端渲染契约）
+
+> 下面以原型 `forest_horizontal_v3.html`（demo_3dags：3 DAG / 13 cascade / 2 嵌套 bundle）为例：
 
 ```json
 {
   "schema_version": 1,
-  "forest_id": "fr_xxx",
-  "version_number": 7,
+  "forest_id": "fr_demo_3dags",
+  "version_number": 1,
   "snapshot_hash": "sha256:...",
   "metadata": {
-    "name": "我的 D3A 工作流",
-    "description": "..."
+    "name": "demo_3dags",
+    "description": "三层调用栈 + jump-out + 线性"
   },
+
   "cascades": [
-    {
-      "id": "cs_001",
-      "label": "比较与跳转",
-      "main_command_instance_id": "ci_001",
-      "action_command_instance_ids": ["ci_002", "ci_003"]
-    }
+    { "id": "cas_01", "main_command_instance_id": "ci_01_m" },
+    { "id": "cas_02", "main_command_instance_id": "ci_02_m" },
+    { "id": "cas_03", "main_command_instance_id": "ci_03_m" },
+    { "id": "cas_O1", "main_command_instance_id": "ci_O1_m" },
+    { "id": "cas_O2", "main_command_instance_id": "ci_O2_m" },
+    { "id": "cas_O3", "main_command_instance_id": "ci_O3_m" },
+    { "id": "cas_I1", "main_command_instance_id": "ci_I1_m" },
+    { "id": "cas_I2", "main_command_instance_id": "ci_I2_m" },
+    { "id": "cas_J1", "main_command_instance_id": "ci_J1_m" },
+    { "id": "cas_J2", "main_command_instance_id": "ci_J2_m" },
+    { "id": "cas_J3", "main_command_instance_id": "ci_J3_m" },
+    { "id": "cas_L1", "main_command_instance_id": "ci_L1_m" },
+    { "id": "cas_L2", "main_command_instance_id": "ci_L2_m" },
+    { "id": "cas_L3", "main_command_instance_id": "ci_L3_m" },
+    { "id": "cas_L4", "main_command_instance_id": "ci_L4_m" }
   ],
+
   "command_instances": [
-    {
-      "id": "ci_001",
-      "cascade_id": "cs_001",
-      "role": "main",
-      "role_index": 0,
-      "command_template_id": "ct_cmd1",
-      "command_template_version_id": "ctv_cmd1_v3",
-      "command_template_snapshot": {
-        "name": "cmd1",
-        "display_name": "比较指令",
-        "struct_kind": "main_struct",
-        "properties": [ /* 模板的完整 property schema 内联 */ ],
-        "display_hints": { "color": "#3B82F6", "icon": "compare" }
-      },
-      "property_values": {
-        "MetaIndex": { "kind": "literal", "literal_value": 1 },
-        "compareType": { "kind": "literal", "literal_value": "D_CMD_1" },
-        "Data1": { "kind": "variable_ref", "variable_name": "var1" },
-        "Mask1": { "kind": "literal", "literal_value": "0xFF" }
-      },
-      "validation_state": "valid",
-      "validation_errors": []
-    }
+    /* === DAG #1 主层 === */
+    { "id": "ci_01_m", "cascade_id": "cas_01", "role": "main", "role_index": 0,
+      "command_template_id": "ct_FETCH_FRAME", "command_template_version_id": "ctv_FETCH_FRAME_v1",
+      "command_template_snapshot": { "name": "FETCH_FRAME", "opcode": "#0x02", "struct_kind": "main_struct" },
+      "property_values": {}, "terminal_marker": null },
+
+    { "id": "ci_01_a0", "cascade_id": "cas_01", "role": "action", "role_index": 0,
+      "command_template_id": "ct_SETUP_DMA", "command_template_version_id": "ctv_SETUP_DMA_v1",
+      "command_template_snapshot": { "name": "SETUP_DMA", "opcode": "#0xA0", "struct_kind": "action_struct" },
+      "property_values": {}, "terminal_marker": null },
+
+    { "id": "ci_02_m", "cascade_id": "cas_02", "role": "main", "role_index": 0,
+      "command_template_snapshot": { "name": "CMP_META_CMD", "opcode": "#0x01" } },
+    { "id": "ci_02_a0", "cascade_id": "cas_02", "role": "action", "role_index": 0,
+      "command_template_snapshot": { "name": "CALL_OUTER", "opcode": "#0xA1" },
+      "terminal_marker": null /* 这个 action 是 EdgeInstance ei_02_to_O1 的 source，画 a→m */ },
+
+    { "id": "ci_03_m", "cascade_id": "cas_03", "role": "main", "role_index": 0,
+      "command_template_snapshot": { "name": "COMMIT_BUF", "opcode": "#0x05" } },
+    { "id": "ci_03_a0", "cascade_id": "cas_03", "role": "action", "role_index": 0,
+      "command_template_snapshot": { "name": "FLUSH_CACHE", "opcode": "#0xA9" } },
+
+    /* === DAG #1 outer bundle === */
+    { "id": "ci_O3_a0", "cascade_id": "cas_O3", "role": "action", "role_index": 0,
+      "command_template_snapshot": { "name": "FINALIZE", "opcode": "#0xAF" },
+      "terminal_marker": "return" /* 原型：cas_O3 action 上有 return badge，不画线 */ },
+
+    /* === DAG #1 inner bundle === */
+    { "id": "ci_I2_a0", "cascade_id": "cas_I2", "role": "action", "role_index": 0,
+      "command_template_snapshot": { "name": "BARRIER_END", "opcode": "#0xAB" },
+      "terminal_marker": "return" /* 原型：cas_I2 action 上有 return badge */ },
+
+    /* === DAG #2 jump_out === */
+    { "id": "ci_J3_a0", "cascade_id": "cas_J3", "role": "action", "role_index": 0,
+      "command_template_snapshot": { "name": "SIGNAL_EXIT", "opcode": "#0xAE" },
+      "terminal_marker": "jump_out",
+      "jump_target": "core_net" /* 原型：jump-out · core_net */ }
+
+    /* 其余 cascade 内部 main/action 省略，结构相同 */
   ],
+
   "bundles": [
-    {
-      "id": "bd_001",
-      "name": "InitObject",
-      "codegen_class_name": "InitObject",
-      "cascade_ids": ["cs_001", "cs_002"]
-    }
+    { "id": "bd_outer", "parent_bundle_id": null, "nesting_depth": 0,
+      "name": "outer_recovery", "codegen_class_name": "OuterRecovery",
+      "cascade_ids": ["cas_O1", "cas_O2", "cas_O3"]
+      /* 注意：cas_I1/I2 不在这里，它们直接关联 inner bundle */ },
+
+    { "id": "bd_inner", "parent_bundle_id": "bd_outer", "nesting_depth": 1,
+      "name": "inner_helper", "codegen_class_name": "InnerHelper",
+      "cascade_ids": ["cas_I1", "cas_I2"] }
   ],
+
   "edges": [
-    {
-      "id": "ei_001",
-      "edge_template_id": "et_yes",
-      "edge_template_version_id": "etv_yes_v1",
-      "edge_template_snapshot": {
-        "name": "yes_branch",
-        "display_hints": { "color": "#10B981", "line_style": "solid" }
-      },
-      "source": { "cascade_id": "cs_001", "role": "action", "role_index": 0 },
-      "target": { "cascade_id": "cs_002" },
-      "property_values": { "label": { "kind": "literal", "literal_value": "是" } },
-      "label": "是"
-    }
+    /* DAG #1 主层 m→m */
+    { "id": "ei_01_02", "edge_template_id": "et_call_mm",
+      "source": { "cascade_id": "cas_01", "role": "main", "role_index": 0 },
+      "target": { "cascade_id": "cas_02" }, "label": "m→m" },
+    { "id": "ei_02_03", "edge_template_id": "et_call_mm",
+      "source": { "cascade_id": "cas_02", "role": "main", "role_index": 0 },
+      "target": { "cascade_id": "cas_03" } },
+
+    /* DAG #1 a→m call 进 outer bundle */
+    { "id": "ei_02_O1", "edge_template_id": "et_call_am",
+      "source": { "cascade_id": "cas_02", "role": "action", "role_index": 0 },
+      "target": { "cascade_id": "cas_O1" }, "label": "a→m · call" },
+
+    /* outer bundle 内 m→m */
+    { "id": "ei_O1_O2", "source": { "cascade_id": "cas_O1", "role": "main", "role_index": 0 }, "target": { "cascade_id": "cas_O2" } },
+    { "id": "ei_O2_O3", "source": { "cascade_id": "cas_O2", "role": "main", "role_index": 0 }, "target": { "cascade_id": "cas_O3" } },
+
+    /* a→m call 进 inner bundle */
+    { "id": "ei_O2_I1", "edge_template_id": "et_call_am",
+      "source": { "cascade_id": "cas_O2", "role": "action", "role_index": 0 },
+      "target": { "cascade_id": "cas_I1" } },
+
+    /* inner bundle 内 m→m */
+    { "id": "ei_I1_I2", "source": { "cascade_id": "cas_I1", "role": "main", "role_index": 0 }, "target": { "cascade_id": "cas_I2" } },
+
+    /* DAG #2 m→m（cas_J3 的 action 是 jump_out，没有出边） */
+    { "id": "ei_J1_J2", "source": { "cascade_id": "cas_J1", "role": "main", "role_index": 0 }, "target": { "cascade_id": "cas_J2" } },
+    { "id": "ei_J2_J3", "source": { "cascade_id": "cas_J2", "role": "main", "role_index": 0 }, "target": { "cascade_id": "cas_J3" } },
+
+    /* DAG #3 纯 m→m */
+    { "id": "ei_L1_L2", "source": { "cascade_id": "cas_L1", "role": "main", "role_index": 0 }, "target": { "cascade_id": "cas_L2" } },
+    { "id": "ei_L2_L3", "source": { "cascade_id": "cas_L2", "role": "main", "role_index": 0 }, "target": { "cascade_id": "cas_L3" } },
+    { "id": "ei_L3_L4", "source": { "cascade_id": "cas_L3", "role": "main", "role_index": 0 }, "target": { "cascade_id": "cas_L4" } }
   ],
-  "variable_bindings": {
-    "var1": { "type_ref": { "kind": "value", "name": "u32" }, "value": null, "scope": "forest" }
-  },
+
+  "variable_bindings": {},
+
   "computed": {
     "dags": [
-      {
-        "dag_index": 0,
-        "root_cascade_id": "cs_001",
-        "cascade_ids": ["cs_001", "cs_002", "cs_003"],
-        "edge_ids": ["ei_001", "ei_002"],
-        "topo_order": ["cs_001", "cs_002", "cs_003"]
-      }
-    ]
+      { "dag_index": 1, "name_hint": "three_layer_call",
+        "root_cascade_ids": ["cas_01"],
+        "leaf_cascade_ids": ["cas_03", "cas_O3", "cas_I2"],
+        "cascade_ids": ["cas_01","cas_02","cas_03","cas_O1","cas_O2","cas_O3","cas_I1","cas_I2"],
+        "edge_ids": ["ei_01_02","ei_02_03","ei_02_O1","ei_O1_O2","ei_O2_O3","ei_O2_I1","ei_I1_I2"],
+        "topo_order": ["cas_01","cas_02","cas_03","cas_O1","cas_O2","cas_I1","cas_I2","cas_O3"] },
+
+      { "dag_index": 2, "name_hint": "jump_out_pattern",
+        "root_cascade_ids": ["cas_J1"],
+        "leaf_cascade_ids": ["cas_J3"],
+        "cascade_ids": ["cas_J1","cas_J2","cas_J3"],
+        "edge_ids": ["ei_J1_J2","ei_J2_J3"] },
+
+      { "dag_index": 3, "name_hint": "linear_simple",
+        "root_cascade_ids": ["cas_L1"],
+        "leaf_cascade_ids": ["cas_L4"],
+        "cascade_ids": ["cas_L1","cas_L2","cas_L3","cas_L4"],
+        "edge_ids": ["ei_L1_L2","ei_L2_L3","ei_L3_L4"] }
+    ],
+    "bundle_internal_edge_ids": ["ei_O1_O2", "ei_O2_O3", "ei_I1_I2"],
+    "bundle_boundary_edge_ids": ["ei_02_O1", "ei_O2_I1"],
+    "terminal_action_instance_ids": ["ci_O3_a0", "ci_I2_a0", "ci_J3_a0"]
   }
 }
 ```
 
-> `computed` 字段是只读冗余，由 dag-compute 在保存时一次性算出并写入。前端不需要重算；后端在加载时直接信任（hash 校验失败可触发重算）。
+> **`computed` 字段是只读冗余**，由 dag-compute 在保存时一次性算出并写入。前端不需要重算；后端加载时直接信任（hash 校验失败可触发重算）。
+>
+> 关键预算字段：
+> - `leaf_cascade_ids`：出度=0 的 cascade，前端直接打"terminal / outer tail / inner tail"标签
+> - `bundle_internal_edge_ids` / `bundle_boundary_edge_ids`：跨 Bundle 的边视觉与代码生成区分（boundary 边 → 对象间方法调用）
+> - `terminal_action_instance_ids`：return / jump_out 的 action 集合，前端直接渲染 badge，不画出边
 
 ---
 
@@ -7426,254 +7615,421 @@ Resp: { result: any, evaluated: true } | { error: string, evaluated: false }
 
 ---
 
-### 10.11 完整数据库 Schema
+### 10.11 完整数据库 Schema（MySQL 5.7 适配版）
 
-> 本节给出本章新增 12 张表 + 修订 3 张原表的完整 DDL；遵循 §1.5 依赖规则与 §8.0.1 outbox 一致性约束。
+> 本节针对 **MySQL 5.7** 给出全套 DDL；与第 1–9 章中其它聚合根表共用 §8.0.1 outbox / §8.4 leader 选举 / §8.0.5 mongo 分片等可靠性约束。
+
+#### 10.11.0 MySQL 5.7 关键差异与本节适配规则
+
+| MySQL 5.7 限制 | 本节统一应对 |
+|---------------|-------------|
+| `CHECK` 约束**仅解析、不强制** | 全部移除 CHECK，迁移到 BEFORE INSERT/UPDATE 触发器 |
+| 不支持 partial / filtered index（`INDEX … WHERE …`） | 改用**生成列（Generated Column, STORED）+ 普通索引** |
+| 不支持 partial unique index | 改用**生成列做 sentinel 化** + 普通 UNIQUE |
+| `UNIQUE KEY` 中 NULL 不参与等价比较（多个 NULL 可重复） | 不在 UNIQUE 列里使用 NULL，改 `NOT NULL DEFAULT` 哨兵值；`owner_id` 用 `0` 表示无主，`deleted_at` 通过 sentinel token 进入唯一键 |
+| 一张表一种事件**只能有 1 个触发器**（INSERT / UPDATE / DELETE × BEFORE / AFTER） | 所有同类校验集中到一个触发器内 |
+| BEFORE INSERT 触发器看不到同一 INSERT 语句中的其它新行 | 多行 INSERT 的"组内不变式"由应用层保证；DB 仅保护单行不变式 |
+| JSON 类型从 5.7.8 起可用，但**不支持函数索引** | JSON 字段需要索引时使用生成列抽出键 + 普通索引 |
+| 循环外键（A→B、B→A）支持但 INSERT 顺序敏感 | `t_cascade.main_command_instance_id` 改为 NULL allowed，先插 cascade，再插 command_instance，最后 UPDATE cascade.main_command_instance_id |
+| 行级锁 + 触发器中 `SELECT FOR UPDATE` 同表合法但要小心死锁 | 触发器内只做主键 / 唯一键查询，不加 FOR UPDATE |
+
+**全表共享的引擎与字符集：所有表都默认追加** `ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`。下文 DDL 中省略此尾巴以减少噪音；实际部署时由 schema-migration 模块统一拼接。
+
+**软删除唯一性的统一模式（贯穿 t_meta_template / t_command_template / t_edge_template / t_forest）**：
+
+```sql
+-- 标准生成列：active 行用固定 token；deleted 行用 row id 作 token，互不冲突
+deleted_uniq_token VARCHAR(64) GENERATED ALWAYS AS (
+    IF(deleted_at IS NULL, '_active_', CONCAT('_del_', id))
+) STORED,
+-- 唯一键替换为 (..., deleted_uniq_token)：active 行严格唯一，deleted 行不再约束
+```
+
+**owner_id 不可为 NULL 的统一约定**：所有模板表 `owner_id BIGINT NOT NULL DEFAULT 0`（0 表示 global / 无主），避免 NULL 在 UNIQUE 中被视作不等。
 
 #### 10.11.1 MetaTemplate 表
 
 ```sql
 CREATE TABLE t_meta_template (
-    id              VARCHAR(32)  PRIMARY KEY,        -- mt_xxxxxxxx
-    name            VARCHAR(128) NOT NULL,
-    display_name    VARCHAR(255) NOT NULL,
-    description     TEXT         NOT NULL,
-    scope           ENUM('global', 'private') NOT NULL,
-    owner_id        BIGINT       NULL,
-    current_version_id VARCHAR(32) NULL,
-    status          ENUM('draft','active','deprecated') NOT NULL DEFAULT 'draft',
-    deleted_at      DATETIME(6)  NULL,
-    created_at      DATETIME(6)  NOT NULL,
-    updated_at      DATETIME(6)  NOT NULL,
-    version         INT          NOT NULL DEFAULT 1,
-    
-    UNIQUE KEY uk_mt_name_scope (name, scope, owner_id, deleted_at),
-    INDEX idx_mt_owner (owner_id, status),
-    INDEX idx_mt_status (status, updated_at)
+    id                  VARCHAR(32)  NOT NULL,           -- mt_xxxxxxxx
+    name                VARCHAR(128) NOT NULL,
+    display_name        VARCHAR(255) NOT NULL,
+    description         TEXT         NOT NULL,
+    scope               ENUM('global','private') NOT NULL,
+    owner_id            BIGINT       NOT NULL DEFAULT 0,   -- 0 = no owner / global
+    current_version_id  VARCHAR(32)  NULL,
+    status              ENUM('draft','active','deprecated') NOT NULL DEFAULT 'draft',
+    deleted_at          DATETIME(6)  NULL,
+    created_at          DATETIME(6)  NOT NULL,
+    updated_at          DATETIME(6)  NOT NULL,
+    version             INT          NOT NULL DEFAULT 1,
+
+    -- 软删除友好的唯一键 sentinel
+    deleted_uniq_token  VARCHAR(64)  GENERATED ALWAYS AS
+        (IF(deleted_at IS NULL, '_active_', CONCAT('_del_', id))) STORED,
+
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_mt_name_scope (name, scope, owner_id, deleted_uniq_token),
+    KEY idx_mt_owner (owner_id, status),
+    KEY idx_mt_status (status, updated_at)
 );
 
 CREATE TABLE t_meta_template_version (
-    id                VARCHAR(32)  PRIMARY KEY,      -- mtv_xxxxxxxx
+    id                VARCHAR(32)  NOT NULL,             -- mtv_xxxxxxxx
     meta_template_id  VARCHAR(32)  NOT NULL,
     version_number    INT          NOT NULL,
     content_hash      CHAR(64)     NOT NULL,
     schema_version    INT          NOT NULL DEFAULT 1,
-    
-    -- 类型字典 JSON，结构示例：
-    -- { "enum_types":[…], "value_types":[…], "composite_types":[…], "variable_slots":[…] }
+
+    -- 类型字典 JSON：{"enum_types":[…],"value_types":[…],"composite_types":[…],"variable_slots":[…]}
     type_dictionary   JSON         NOT NULL,
-    
+
     notes             TEXT         NULL,
     created_by        BIGINT       NOT NULL,
     created_at        DATETIME(6)  NOT NULL,
-    
-    CONSTRAINT fk_mtv_mt FOREIGN KEY (meta_template_id) REFERENCES t_meta_template(id),
-    UNIQUE KEY uk_mtv_dedup (meta_template_id, content_hash),
+
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_mtv_dedup   (meta_template_id, content_hash),
     UNIQUE KEY uk_mtv_version (meta_template_id, version_number),
-    INDEX idx_mtv_created (created_at)
+    KEY idx_mtv_created (created_at),
+    CONSTRAINT fk_mtv_mt FOREIGN KEY (meta_template_id) REFERENCES t_meta_template(id)
 );
 ```
 
-#### 10.11.2 CommandTemplate 表
+#### 10.11.2 CommandTemplate 表（含 opcode）
 
 ```sql
 CREATE TABLE t_command_template (
-    id              VARCHAR(32)  PRIMARY KEY,        -- ct_xxxxxxxx
-    name            VARCHAR(128) NOT NULL,
-    display_name    VARCHAR(255) NOT NULL,
-    category        VARCHAR(64)  NOT NULL,
-    struct_kind     ENUM('main_struct','action_struct') NOT NULL,
-    scope           ENUM('global','private') NOT NULL,
-    owner_id        BIGINT       NULL,
-    current_version_id VARCHAR(32) NULL,
-    status          ENUM('draft','active','deprecated') NOT NULL DEFAULT 'draft',
-    deleted_at      DATETIME(6)  NULL,
-    created_at      DATETIME(6)  NOT NULL,
-    updated_at      DATETIME(6)  NOT NULL,
-    version         INT          NOT NULL DEFAULT 1,
-    
-    UNIQUE KEY uk_ct_name_scope (name, scope, owner_id, deleted_at),
-    INDEX idx_ct_owner (owner_id, status),
-    INDEX idx_ct_struct_kind (struct_kind, status),
-    INDEX idx_ct_category (category, status)
+    id                  VARCHAR(32)  NOT NULL,           -- ct_xxxxxxxx
+    name                VARCHAR(128) NOT NULL,
+    display_name        VARCHAR(255) NOT NULL,
+    category            VARCHAR(64)  NOT NULL,
+    struct_kind         ENUM('main_struct','action_struct') NOT NULL,
+    scope               ENUM('global','private') NOT NULL,
+    owner_id            BIGINT       NOT NULL DEFAULT 0,
+    current_version_id  VARCHAR(32)  NULL,
+    status              ENUM('draft','active','deprecated') NOT NULL DEFAULT 'draft',
+    deleted_at          DATETIME(6)  NULL,
+    created_at          DATETIME(6)  NOT NULL,
+    updated_at          DATETIME(6)  NOT NULL,
+    version             INT          NOT NULL DEFAULT 1,
+
+    deleted_uniq_token  VARCHAR(64)  GENERATED ALWAYS AS
+        (IF(deleted_at IS NULL, '_active_', CONCAT('_del_', id))) STORED,
+
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_ct_name_scope    (name, scope, owner_id, deleted_uniq_token),
+    KEY idx_ct_owner       (owner_id, status),
+    KEY idx_ct_struct_kind (struct_kind, status),
+    KEY idx_ct_category    (category, status)
 );
 
 CREATE TABLE t_command_template_version (
-    id                       VARCHAR(32) PRIMARY KEY,  -- ctv_xxxxxxxx
-    command_template_id      VARCHAR(32) NOT NULL,
-    version_number           INT         NOT NULL,
-    content_hash             CHAR(64)    NOT NULL,
-    meta_template_version_id VARCHAR(32) NOT NULL,
-    schema_version           INT         NOT NULL DEFAULT 1,
-    
-    properties_schema  JSON NOT NULL,    -- [PropertyDef…] 序列化
-    codegen_hints      JSON NOT NULL,
-    display_hints      JSON NOT NULL,
-    
-    notes              TEXT       NULL,
-    created_by         BIGINT     NOT NULL,
-    created_at         DATETIME(6) NOT NULL,
-    
-    CONSTRAINT fk_ctv_ct FOREIGN KEY (command_template_id) REFERENCES t_command_template(id),
-    CONSTRAINT fk_ctv_mtv FOREIGN KEY (meta_template_version_id) REFERENCES t_meta_template_version(id),
-    UNIQUE KEY uk_ctv_dedup (command_template_id, content_hash),
+    id                        VARCHAR(32) NOT NULL,      -- ctv_xxxxxxxx
+    command_template_id       VARCHAR(32) NOT NULL,
+    version_number            INT         NOT NULL,
+    content_hash              CHAR(64)    NOT NULL,
+    meta_template_version_id  VARCHAR(32) NOT NULL,
+    schema_version            INT         NOT NULL DEFAULT 1,
+
+    -- 硬件操作码（如 #0x02 / #0xA0）；main_struct 必填，action_struct 可空
+    -- 由 trg_ctv_validate 在插入时校验 main_struct 时 opcode IS NOT NULL
+    opcode                    VARCHAR(16) NULL,
+
+    properties_schema         JSON        NOT NULL,    -- [PropertyDef…]
+    codegen_hints             JSON        NOT NULL,
+    display_hints             JSON        NOT NULL,
+
+    notes                     TEXT        NULL,
+    created_by                BIGINT      NOT NULL,
+    created_at                DATETIME(6) NOT NULL,
+
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_ctv_dedup   (command_template_id, content_hash),
     UNIQUE KEY uk_ctv_version (command_template_id, version_number),
-    INDEX idx_ctv_mtv (meta_template_version_id)
+    KEY idx_ctv_mtv (meta_template_version_id),
+    CONSTRAINT fk_ctv_ct  FOREIGN KEY (command_template_id) REFERENCES t_command_template(id),
+    CONSTRAINT fk_ctv_mtv FOREIGN KEY (meta_template_version_id) REFERENCES t_meta_template_version(id)
 );
+
+-- 触发器：main_struct 必有 opcode（CHECK 在 5.7 不强制，故用触发器）
+DELIMITER //
+CREATE TRIGGER trg_ctv_validate BEFORE INSERT ON t_command_template_version
+FOR EACH ROW
+BEGIN
+    DECLARE v_kind ENUM('main_struct','action_struct');
+    SELECT struct_kind INTO v_kind FROM t_command_template WHERE id = NEW.command_template_id;
+    IF v_kind = 'main_struct' AND (NEW.opcode IS NULL OR NEW.opcode = '') THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'CommandTemplate(main_struct) requires non-empty opcode';
+    END IF;
+END//
+DELIMITER ;
 ```
 
 #### 10.11.3 EdgeTemplate 表
 
 ```sql
 CREATE TABLE t_edge_template (
-    id              VARCHAR(32)  PRIMARY KEY,        -- et_xxxxxxxx
-    name            VARCHAR(128) NOT NULL,
-    display_name    VARCHAR(255) NOT NULL,
-    category        VARCHAR(64)  NOT NULL,
-    scope           ENUM('global','private') NOT NULL,
-    owner_id        BIGINT       NULL,
-    current_version_id VARCHAR(32) NULL,
-    status          ENUM('draft','active','deprecated') NOT NULL DEFAULT 'draft',
-    deleted_at      DATETIME(6)  NULL,
-    created_at      DATETIME(6)  NOT NULL,
-    updated_at      DATETIME(6)  NOT NULL,
-    version         INT          NOT NULL DEFAULT 1,
-    
-    UNIQUE KEY uk_et_name_scope (name, scope, owner_id, deleted_at),
-    INDEX idx_et_category (category, status)
+    id                  VARCHAR(32)  NOT NULL,           -- et_xxxxxxxx
+    name                VARCHAR(128) NOT NULL,
+    display_name        VARCHAR(255) NOT NULL,
+    category            VARCHAR(64)  NOT NULL,
+    scope               ENUM('global','private') NOT NULL,
+    owner_id            BIGINT       NOT NULL DEFAULT 0,
+    current_version_id  VARCHAR(32)  NULL,
+    status              ENUM('draft','active','deprecated') NOT NULL DEFAULT 'draft',
+    deleted_at          DATETIME(6)  NULL,
+    created_at          DATETIME(6)  NOT NULL,
+    updated_at          DATETIME(6)  NOT NULL,
+    version             INT          NOT NULL DEFAULT 1,
+
+    deleted_uniq_token  VARCHAR(64)  GENERATED ALWAYS AS
+        (IF(deleted_at IS NULL, '_active_', CONCAT('_del_', id))) STORED,
+
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_et_name_scope (name, scope, owner_id, deleted_uniq_token),
+    KEY idx_et_category (category, status)
 );
 
 CREATE TABLE t_edge_template_version (
-    id                       VARCHAR(32) PRIMARY KEY,  -- etv_xxxxxxxx
-    edge_template_id         VARCHAR(32) NOT NULL,
-    version_number           INT         NOT NULL,
-    content_hash             CHAR(64)    NOT NULL,
-    meta_template_version_id VARCHAR(32) NOT NULL,
-    schema_version           INT         NOT NULL DEFAULT 1,
-    
+    id                        VARCHAR(32) NOT NULL,      -- etv_xxxxxxxx
+    edge_template_id          VARCHAR(32) NOT NULL,
+    version_number            INT         NOT NULL,
+    content_hash              CHAR(64)    NOT NULL,
+    meta_template_version_id  VARCHAR(32) NOT NULL,
+    schema_version            INT         NOT NULL DEFAULT 1,
+
     properties_schema     JSON NOT NULL,
     semantic_constraints  JSON NOT NULL,
     display_hints         JSON NOT NULL,
-    
-    notes        TEXT       NULL,
-    created_by   BIGINT     NOT NULL,
+
+    notes        TEXT        NULL,
+    created_by   BIGINT      NOT NULL,
     created_at   DATETIME(6) NOT NULL,
-    
-    CONSTRAINT fk_etv_et FOREIGN KEY (edge_template_id) REFERENCES t_edge_template(id),
-    CONSTRAINT fk_etv_mtv FOREIGN KEY (meta_template_version_id) REFERENCES t_meta_template_version(id),
-    UNIQUE KEY uk_etv_dedup (edge_template_id, content_hash),
-    UNIQUE KEY uk_etv_version (edge_template_id, version_number)
+
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_etv_dedup   (edge_template_id, content_hash),
+    UNIQUE KEY uk_etv_version (edge_template_id, version_number),
+    CONSTRAINT fk_etv_et  FOREIGN KEY (edge_template_id) REFERENCES t_edge_template(id),
+    CONSTRAINT fk_etv_mtv FOREIGN KEY (meta_template_version_id) REFERENCES t_meta_template_version(id)
 );
 ```
 
-#### 10.11.4 Forest 与 ForestVersion 表（替换原 §3.2.2 中 `t_cascade_graph` / `t_graph_version`）
+#### 10.11.4 Forest 与 ForestVersion 表
 
-> 在 §3.2.2 中已有 `t_cascade_graph` / `t_graph_version`；本节以业务命名重定义并增加平铺子表。原文档表名仍可作为别名保留，迁移时通过 view 兼容。
+> Forest / ForestVersion 是 §3.2.2 forest-snapshot 模块的物理实现；表名与第 1–9 章中提及的 `t_cascade_graph` / `t_graph_version` 互通。
 
 ```sql
 CREATE TABLE t_forest (
-    id              VARCHAR(32)  PRIMARY KEY,         -- fr_xxxxxxxx
-    name            VARCHAR(255) NOT NULL,
-    description     TEXT         NULL,
-    owner_id        BIGINT       NOT NULL,
-    scope           ENUM('private','official','official_candidate') NOT NULL DEFAULT 'private',
-    category        VARCHAR(64)  NULL,                -- 官方分类
-    current_version_id VARCHAR(32) NULL,
-    status          ENUM('active','archived') NOT NULL DEFAULT 'active',
-    deleted_at      DATETIME(6)  NULL,
-    created_at      DATETIME(6)  NOT NULL,
-    updated_at      DATETIME(6)  NOT NULL,
-    version         INT          NOT NULL DEFAULT 1,
-    
-    INDEX idx_fr_owner (owner_id, status),
-    INDEX idx_fr_scope_category (scope, category, status),
-    INDEX idx_fr_updated (updated_at)
+    id                  VARCHAR(32)  NOT NULL,           -- fr_xxxxxxxx
+    name                VARCHAR(255) NOT NULL,
+    description         TEXT         NULL,
+    owner_id            BIGINT       NOT NULL,
+    scope               ENUM('private','official','official_candidate') NOT NULL DEFAULT 'private',
+    category            VARCHAR(64)  NULL,
+    current_version_id  VARCHAR(32)  NULL,
+    status              ENUM('active','archived') NOT NULL DEFAULT 'active',
+    deleted_at          DATETIME(6)  NULL,
+    created_at          DATETIME(6)  NOT NULL,
+    updated_at          DATETIME(6)  NOT NULL,
+    version             INT          NOT NULL DEFAULT 1,
+
+    PRIMARY KEY (id),
+    KEY idx_fr_owner          (owner_id, status),
+    KEY idx_fr_scope_category (scope, category, status),
+    KEY idx_fr_updated        (updated_at)
 );
 
 CREATE TABLE t_forest_version (
-    id                VARCHAR(32) PRIMARY KEY,        -- frv_xxxxxxxx
-    forest_id         VARCHAR(32) NOT NULL,
-    version_number    INT         NOT NULL,
-    snapshot_hash     CHAR(64)    NOT NULL,
-    schema_version    INT         NOT NULL DEFAULT 1,
-    
-    -- 整个 forest 的完整 JSON（前端一次拉取的契约形式；与平铺子表内容等价）
-    snapshot_json     LONGTEXT    NOT NULL,
-    
-    -- §7.8 GraphVersion 状态机：DRAFT/SAVED/PHASE1_PASSED/FULLY_VALIDATED/ARCHIVED
-    state             ENUM('draft','saved','phase1_passed','fully_validated','archived') NOT NULL,
-    validated_at      DATETIME(6) NULL,
-    
-    -- 影响传播：本版本基于哪些模板版本快照（用于级联检测）
-    referenced_command_template_versions JSON NOT NULL,  -- ["ctv_xxx", ...]
-    referenced_edge_template_versions    JSON NOT NULL,
-    referenced_meta_template_versions    JSON NOT NULL,
-    
-    -- 当本版本由 fork-from-changeset / 影响升级 fork 出的，这里指向源
-    forked_from_version_id  VARCHAR(32) NULL,
-    fork_reason             ENUM('user_save','changeset_apply','impact_migration','promotion','manual_fork') NOT NULL DEFAULT 'user_save',
-    
-    created_by        BIGINT      NOT NULL,
-    created_at        DATETIME(6) NOT NULL,
-    
-    CONSTRAINT fk_frv_forest FOREIGN KEY (forest_id) REFERENCES t_forest(id),
+    id                                    VARCHAR(32) NOT NULL,       -- frv_xxxxxxxx
+    forest_id                             VARCHAR(32) NOT NULL,
+    version_number                        INT         NOT NULL,
+    snapshot_hash                         CHAR(64)    NOT NULL,
+    schema_version                        INT         NOT NULL DEFAULT 1,
+
+    -- 整个 forest 的完整 JSON（前端一次拉取契约；与平铺子表等价；MySQL 5.7.8+ JSON 类型）
+    snapshot_json                         JSON        NOT NULL,
+
+    state                                 ENUM('draft','saved','phase1_passed','fully_validated','archived') NOT NULL,
+    validated_at                          DATETIME(6) NULL,
+
+    referenced_command_template_versions  JSON NOT NULL,    -- ["ctv_xxx", ...]
+    referenced_edge_template_versions     JSON NOT NULL,
+    referenced_meta_template_versions     JSON NOT NULL,
+
+    forked_from_version_id                VARCHAR(32) NULL,
+    fork_reason                           ENUM('user_save','changeset_apply','impact_migration','promotion','manual_fork') NOT NULL DEFAULT 'user_save',
+
+    created_by                            BIGINT      NOT NULL,
+    created_at                            DATETIME(6) NOT NULL,
+
+    PRIMARY KEY (id),
     UNIQUE KEY uk_frv_version (forest_id, version_number),
-    INDEX idx_frv_state (state, created_at),
-    INDEX idx_frv_forked_from (forked_from_version_id)
+    KEY idx_frv_state         (state, created_at),
+    KEY idx_frv_forked_from   (forked_from_version_id),
+    CONSTRAINT fk_frv_forest FOREIGN KEY (forest_id) REFERENCES t_forest(id)
 );
 ```
 
 #### 10.11.5 Forest 内部平铺子表
 
+> 包含 5 张表：`t_cascade` / `t_command_instance` / `t_bundle` / `t_bundle_cascade` / `t_edge_instance` / `t_forest_variable_binding`，外加 6 个触发器实现"原 CHECK 约束 + 不变式"在 5.7 下的强制。
+>
+> **循环 FK 处理**：`t_cascade.main_command_instance_id` ↔ `t_command_instance.cascade_id` 形成环。MySQL 5.7 支持但要求 INSERT 顺序，因此 `t_cascade.main_command_instance_id` **设为 NULL allowed**，加 FK，应用层保证以下顺序：
+> 1. `INSERT t_cascade(main_command_instance_id=NULL)` → 拿到 cascade_id
+> 2. `INSERT t_command_instance(cascade_id, role='main', role_index=0)` → 拿到 ci_id
+> 3. `UPDATE t_cascade SET main_command_instance_id = ci_id WHERE id = cascade_id`
+>
+> 边相关写入（`t_edge_instance`）必须发生在第 3 步之后；`trg_ei_validate` 触发器会校验 target_cascade.main_command_instance_id IS NOT NULL。
+
 ```sql
--- 级跳
+-- ========== 级跳 ==========
 CREATE TABLE t_cascade (
-    id                          VARCHAR(32) PRIMARY KEY,  -- cs_xxxxxxxx
+    id                          VARCHAR(32) NOT NULL,         -- cs_xxxxxxxx
     forest_version_id           VARCHAR(32) NOT NULL,
-    main_command_instance_id    VARCHAR(32) NOT NULL,
+    -- 循环 FK：先插 cascade(NULL) → 插 main command_instance → UPDATE main 列
+    main_command_instance_id    VARCHAR(32) NULL,
     label                       VARCHAR(255) NULL,
-    display_meta                JSON         NULL,
-    extensions                  JSON         NULL,
-    created_at                  DATETIME(6)  NOT NULL,
-    
-    CONSTRAINT fk_cs_frv FOREIGN KEY (forest_version_id) REFERENCES t_forest_version(id),
-    -- main_command_instance_id 的 FK 因循环引用不在此处建，由 INSERT 顺序与应用层保证
-    INDEX idx_cs_frv (forest_version_id)
+    display_meta                JSON        NULL,
+    extensions                  JSON        NULL,
+    created_at                  DATETIME(6) NOT NULL,
+
+    PRIMARY KEY (id),
+    KEY idx_cs_frv  (forest_version_id),
+    KEY idx_cs_main (main_command_instance_id),
+    CONSTRAINT fk_cs_frv FOREIGN KEY (forest_version_id) REFERENCES t_forest_version(id)
+    -- main_command_instance_id 的 FK 在 t_command_instance 建表后单独 ALTER ADD
 );
 
--- 命令实例
+-- ========== 命令实例 ==========
 CREATE TABLE t_command_instance (
-    id                            VARCHAR(32) PRIMARY KEY,  -- ci_xxxxxxxx
+    id                            VARCHAR(32) NOT NULL,        -- ci_xxxxxxxx
     forest_version_id             VARCHAR(32) NOT NULL,
     cascade_id                    VARCHAR(32) NOT NULL,
     role                          ENUM('main','action') NOT NULL,
     role_index                    INT         NOT NULL,
-    
+
     command_template_id           VARCHAR(32) NOT NULL,
     command_template_version_id   VARCHAR(32) NOT NULL,
-    
-    property_values               JSON NOT NULL,    -- {prop_name: PropertyValue, ...}
+
+    property_values               JSON        NOT NULL,
     validation_state              ENUM('valid','invalid','incomplete') NOT NULL DEFAULT 'incomplete',
-    validation_errors             JSON NULL,
-    extensions                    JSON NULL,
+    validation_errors             JSON        NULL,
+
+    -- 终止标记（仅对 role='action' 有效；非空时不允许作为 EdgeInstance.source）
+    terminal_marker               ENUM('return','jump_out','terminal') NULL,
+    -- 仅当 terminal_marker='jump_out' 时填，记录跳出目标（外部 forest / 子系统名）
+    jump_target                   VARCHAR(128) NULL,
+
+    extensions                    JSON        NULL,
     created_at                    DATETIME(6) NOT NULL,
-    
+
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_ci_role (cascade_id, role, role_index),
+    KEY idx_ci_frv         (forest_version_id),
+    KEY idx_ci_ctv         (command_template_version_id),
+    KEY idx_ci_terminal    (cascade_id, terminal_marker),
     CONSTRAINT fk_ci_frv FOREIGN KEY (forest_version_id) REFERENCES t_forest_version(id),
     CONSTRAINT fk_ci_cs  FOREIGN KEY (cascade_id) REFERENCES t_cascade(id) ON DELETE CASCADE,
-    CONSTRAINT fk_ci_ctv FOREIGN KEY (command_template_version_id) REFERENCES t_command_template_version(id),
-    
-    UNIQUE KEY uk_ci_role (cascade_id, role, role_index),
-    INDEX idx_ci_frv (forest_version_id),
-    INDEX idx_ci_ctv (command_template_version_id)
+    CONSTRAINT fk_ci_ctv FOREIGN KEY (command_template_version_id) REFERENCES t_command_template_version(id)
 );
 
--- 触发器：保证每个级跳恰有 1 个 main 角色 CommandInstance
+-- 现在补 t_cascade 上对 main_command_instance_id 的 FK
+ALTER TABLE t_cascade
+    ADD CONSTRAINT fk_cs_main FOREIGN KEY (main_command_instance_id)
+        REFERENCES t_command_instance(id);
+
+-- ========== Bundle（支持嵌套） ==========
+CREATE TABLE t_bundle (
+    id                  VARCHAR(32)  NOT NULL,                -- bd_xxxxxxxx
+    forest_version_id   VARCHAR(32)  NOT NULL,
+    parent_bundle_id    VARCHAR(32)  NULL,                    -- 父 bundle；NULL = 顶层
+    nesting_depth       INT          NOT NULL DEFAULT 0,      -- 由触发器维护
+    name                VARCHAR(128) NOT NULL,
+    description         TEXT         NULL,
+    codegen_class_name  VARCHAR(128) NOT NULL,
+    extensions          JSON         NULL,
+    created_at          DATETIME(6)  NOT NULL,
+
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_bd_name (forest_version_id, name),
+    KEY idx_bd_frv    (forest_version_id),
+    KEY idx_bd_parent (parent_bundle_id),
+    CONSTRAINT fk_bd_frv    FOREIGN KEY (forest_version_id) REFERENCES t_forest_version(id),
+    CONSTRAINT fk_bd_parent FOREIGN KEY (parent_bundle_id)  REFERENCES t_bundle(id)
+);
+
+-- ========== Bundle ↔ Cascade ==========
+-- 一个 cascade 直接归属"最内层"的 bundle；外层归属由 parent_bundle_id 链聚合
+CREATE TABLE t_bundle_cascade (
+    bundle_id   VARCHAR(32) NOT NULL,
+    cascade_id  VARCHAR(32) NOT NULL,
+    seq         INT         NOT NULL,
+
+    PRIMARY KEY (bundle_id, cascade_id),
+    UNIQUE KEY  uk_bc_cascade (cascade_id),
+    CONSTRAINT  fk_bc_bd FOREIGN KEY (bundle_id) REFERENCES t_bundle(id) ON DELETE CASCADE,
+    CONSTRAINT  fk_bc_cs FOREIGN KEY (cascade_id) REFERENCES t_cascade(id) ON DELETE CASCADE
+);
+
+-- ========== Edge 实例 ==========
+CREATE TABLE t_edge_instance (
+    id                          VARCHAR(32) NOT NULL,         -- ei_xxxxxxxx
+    forest_version_id           VARCHAR(32) NOT NULL,
+    edge_template_id            VARCHAR(32) NOT NULL,
+    edge_template_version_id    VARCHAR(32) NOT NULL,
+
+    source_cascade_id           VARCHAR(32) NOT NULL,
+    source_role                 ENUM('main','action') NOT NULL,
+    source_role_index           INT         NOT NULL,
+
+    -- target 隐含为 target_cascade.main_command_instance；不冗余存 target_role
+    target_cascade_id           VARCHAR(32) NOT NULL,
+
+    property_values             JSON        NOT NULL,
+    label                       VARCHAR(255) NULL,
+    extensions                  JSON        NULL,
+    created_at                  DATETIME(6) NOT NULL,
+
+    PRIMARY KEY (id),
+    KEY idx_ei_frv (forest_version_id),
+    KEY idx_ei_src (source_cascade_id, source_role, source_role_index),
+    KEY idx_ei_tgt (target_cascade_id),
+    CONSTRAINT fk_ei_frv FOREIGN KEY (forest_version_id) REFERENCES t_forest_version(id),
+    CONSTRAINT fk_ei_etv FOREIGN KEY (edge_template_version_id) REFERENCES t_edge_template_version(id),
+    CONSTRAINT fk_ei_src FOREIGN KEY (source_cascade_id) REFERENCES t_cascade(id),
+    CONSTRAINT fk_ei_tgt FOREIGN KEY (target_cascade_id) REFERENCES t_cascade(id)
+    -- 自环 / target 必为 main / source 不能是 terminal action 由触发器 trg_ei_validate 保证
+);
+
+-- ========== 变量绑定 ==========
+CREATE TABLE t_forest_variable_binding (
+    forest_version_id   VARCHAR(32)  NOT NULL,
+    variable_name       VARCHAR(128) NOT NULL,
+    type_ref            JSON         NOT NULL,
+    bound_value         JSON         NULL,           -- null = 设计时未填
+    scope               ENUM('forest','dag','cascade') NOT NULL,
+    description         TEXT         NULL,
+
+    PRIMARY KEY (forest_version_id, variable_name),
+    CONSTRAINT fk_fvb_frv FOREIGN KEY (forest_version_id) REFERENCES t_forest_version(id) ON DELETE CASCADE
+);
+```
+
+**触发器集合（落地不变式：CHECK 等价语义 + terminal_marker + Bundle 嵌套）：**
+
+```sql
 DELIMITER //
-CREATE TRIGGER trg_ci_main_singleton BEFORE INSERT ON t_command_instance
-FOR EACH ROW BEGIN
+
+-- ========== t_command_instance：main 单例 + role_index 规则 + terminal_marker 规则 ==========
+CREATE TRIGGER trg_ci_validate BEFORE INSERT ON t_command_instance
+FOR EACH ROW
+BEGIN
+    -- 1. 同 cascade 内 main 单例
     IF NEW.role = 'main' THEN
-        IF (SELECT COUNT(*) FROM t_command_instance
-            WHERE cascade_id = NEW.cascade_id AND role = 'main') > 0 THEN
+        IF EXISTS (SELECT 1 FROM t_command_instance
+                   WHERE cascade_id = NEW.cascade_id AND role = 'main') THEN
             SIGNAL SQLSTATE '45000'
                 SET MESSAGE_TEXT = 'Cascade already has a main_struct CommandInstance';
         END IF;
@@ -7682,81 +8038,153 @@ FOR EACH ROW BEGIN
                 SET MESSAGE_TEXT = 'main_struct CommandInstance must have role_index=0';
         END IF;
     END IF;
+    -- 2. terminal_marker 仅对 action 有效
+    IF NEW.terminal_marker IS NOT NULL AND NEW.role <> 'action' THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'terminal_marker only applies to action role';
+    END IF;
+    -- 3. jump_out 必有 jump_target；其它 marker 不允许 jump_target
+    IF NEW.terminal_marker = 'jump_out' AND (NEW.jump_target IS NULL OR NEW.jump_target = '') THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'terminal_marker=jump_out requires jump_target';
+    END IF;
+    IF (NEW.terminal_marker IS NULL OR NEW.terminal_marker IN ('return','terminal'))
+       AND NEW.jump_target IS NOT NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'jump_target only allowed when terminal_marker=jump_out';
+    END IF;
 END//
+
+CREATE TRIGGER trg_ci_validate_upd BEFORE UPDATE ON t_command_instance
+FOR EACH ROW
+BEGIN
+    -- terminal_marker / jump_target 一致性（同 INSERT 触发器后两条规则）
+    IF NEW.terminal_marker IS NOT NULL AND NEW.role <> 'action' THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'terminal_marker only applies to action role';
+    END IF;
+    IF NEW.terminal_marker = 'jump_out' AND (NEW.jump_target IS NULL OR NEW.jump_target = '') THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'terminal_marker=jump_out requires jump_target';
+    END IF;
+    IF (NEW.terminal_marker IS NULL OR NEW.terminal_marker IN ('return','terminal'))
+       AND NEW.jump_target IS NOT NULL THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'jump_target only allowed when terminal_marker=jump_out';
+    END IF;
+END//
+
+
+-- ========== t_edge_instance：自环 / target 必为 main / source 不能是 terminal action ==========
+CREATE TRIGGER trg_ei_validate BEFORE INSERT ON t_edge_instance
+FOR EACH ROW
+BEGIN
+    DECLARE v_target_main VARCHAR(32);
+    DECLARE v_src_marker  ENUM('return','jump_out','terminal');
+
+    -- 1. 自环
+    IF NEW.source_cascade_id = NEW.target_cascade_id THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'EdgeInstance: self-loop forbidden';
+    END IF;
+
+    -- 2. target_cascade 必须已设置 main
+    SELECT main_command_instance_id INTO v_target_main
+        FROM t_cascade WHERE id = NEW.target_cascade_id;
+    IF v_target_main IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'EdgeInstance: target cascade has no main_command_instance';
+    END IF;
+
+    -- 3. source 是 action 时，对应 CommandInstance.terminal_marker 必须为 NULL
+    IF NEW.source_role = 'action' THEN
+        SELECT terminal_marker INTO v_src_marker
+            FROM t_command_instance
+            WHERE cascade_id = NEW.source_cascade_id
+              AND role = 'action'
+              AND role_index = NEW.source_role_index
+            LIMIT 1;
+        IF v_src_marker IS NOT NULL THEN
+            SIGNAL SQLSTATE '45000'
+                SET MESSAGE_TEXT = 'EdgeInstance: source action has terminal_marker; outgoing edge forbidden';
+        END IF;
+    END IF;
+
+    -- 4. source / target / forest_version_id 必须一致
+    IF (SELECT forest_version_id FROM t_cascade WHERE id = NEW.source_cascade_id) <> NEW.forest_version_id
+       OR (SELECT forest_version_id FROM t_cascade WHERE id = NEW.target_cascade_id) <> NEW.forest_version_id THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'EdgeInstance: source / target must belong to the same forest_version';
+    END IF;
+END//
+
+
+-- ========== t_bundle：嵌套深度 + 同 forest_version + 无环 ==========
+CREATE TRIGGER trg_bundle_validate BEFORE INSERT ON t_bundle
+FOR EACH ROW
+BEGIN
+    DECLARE v_parent_fv VARCHAR(32);
+    DECLARE v_parent_depth INT;
+
+    IF NEW.parent_bundle_id IS NOT NULL THEN
+        -- 父子在同一 forest_version
+        SELECT forest_version_id, nesting_depth
+          INTO v_parent_fv, v_parent_depth
+          FROM t_bundle WHERE id = NEW.parent_bundle_id;
+        IF v_parent_fv IS NULL OR v_parent_fv <> NEW.forest_version_id THEN
+            SIGNAL SQLSTATE '45000'
+                SET MESSAGE_TEXT = 'Bundle: parent must be in the same forest_version';
+        END IF;
+        -- 嵌套深度 = 父深度 + 1，硬上限 5
+        IF v_parent_depth + 1 > 5 THEN
+            SIGNAL SQLSTATE '45000'
+                SET MESSAGE_TEXT = 'Bundle: nesting depth exceeds 5';
+        END IF;
+        SET NEW.nesting_depth = v_parent_depth + 1;
+    ELSE
+        SET NEW.nesting_depth = 0;
+    END IF;
+    -- INSERT 时不可能形成环（NEW.id 还没被任何行引用），无需 cycle 检测
+END//
+
+CREATE TRIGGER trg_bundle_validate_upd BEFORE UPDATE ON t_bundle
+FOR EACH ROW
+BEGIN
+    DECLARE v_cur VARCHAR(32);
+    DECLARE v_steps INT DEFAULT 0;
+
+    IF NEW.parent_bundle_id IS NOT NULL AND NEW.parent_bundle_id <> OLD.parent_bundle_id THEN
+        -- 沿 parent 链向上走，遇见 NEW.id → 环
+        SET v_cur = NEW.parent_bundle_id;
+        WHILE v_cur IS NOT NULL AND v_steps < 6 DO
+            IF v_cur = NEW.id THEN
+                SIGNAL SQLSTATE '45000'
+                    SET MESSAGE_TEXT = 'Bundle: nesting cycle detected';
+            END IF;
+            SELECT parent_bundle_id INTO v_cur FROM t_bundle WHERE id = v_cur;
+            SET v_steps = v_steps + 1;
+        END WHILE;
+        IF v_steps >= 6 THEN
+            SIGNAL SQLSTATE '45000'
+                SET MESSAGE_TEXT = 'Bundle: nesting too deep on update';
+        END IF;
+    END IF;
+    -- 维护 nesting_depth
+    IF NEW.parent_bundle_id IS NULL THEN
+        SET NEW.nesting_depth = 0;
+    ELSE
+        SET NEW.nesting_depth = (SELECT nesting_depth FROM t_bundle WHERE id = NEW.parent_bundle_id) + 1;
+    END IF;
+END//
+
 DELIMITER ;
-
--- Bundle
-CREATE TABLE t_bundle (
-    id                  VARCHAR(32) PRIMARY KEY,  -- bd_xxxxxxxx
-    forest_version_id   VARCHAR(32) NOT NULL,
-    name                VARCHAR(128) NOT NULL,
-    description         TEXT NULL,
-    codegen_class_name  VARCHAR(128) NOT NULL,
-    extensions          JSON NULL,
-    created_at          DATETIME(6) NOT NULL,
-    
-    CONSTRAINT fk_bd_frv FOREIGN KEY (forest_version_id) REFERENCES t_forest_version(id),
-    INDEX idx_bd_frv (forest_version_id),
-    UNIQUE KEY uk_bd_name (forest_version_id, name)
-);
-
--- Bundle ↔ Cascade（一个级跳最多在一个 Bundle 里）
-CREATE TABLE t_bundle_cascade (
-    bundle_id   VARCHAR(32) NOT NULL,
-    cascade_id  VARCHAR(32) NOT NULL,
-    seq         INT         NOT NULL,    -- 在 bundle 内的顺序（用于代码生成）
-    
-    PRIMARY KEY (bundle_id, cascade_id),
-    UNIQUE KEY uk_bc_cascade (cascade_id),
-    CONSTRAINT fk_bc_bd FOREIGN KEY (bundle_id) REFERENCES t_bundle(id) ON DELETE CASCADE,
-    CONSTRAINT fk_bc_cs FOREIGN KEY (cascade_id) REFERENCES t_cascade(id) ON DELETE CASCADE
-);
-
--- Edge 实例
-CREATE TABLE t_edge_instance (
-    id                          VARCHAR(32) PRIMARY KEY,  -- ei_xxxxxxxx
-    forest_version_id           VARCHAR(32) NOT NULL,
-    edge_template_id            VARCHAR(32) NOT NULL,
-    edge_template_version_id    VARCHAR(32) NOT NULL,
-    
-    source_cascade_id           VARCHAR(32) NOT NULL,
-    source_role                 ENUM('main','action') NOT NULL,
-    source_role_index           INT         NOT NULL,
-    
-    target_cascade_id           VARCHAR(32) NOT NULL,
-    -- target 隐含为 target_cascade.main_command_instance（由触发器强制）
-    
-    property_values             JSON NOT NULL,
-    label                       VARCHAR(255) NULL,
-    extensions                  JSON NULL,
-    created_at                  DATETIME(6) NOT NULL,
-    
-    CONSTRAINT fk_ei_frv FOREIGN KEY (forest_version_id) REFERENCES t_forest_version(id),
-    CONSTRAINT fk_ei_etv FOREIGN KEY (edge_template_version_id) REFERENCES t_edge_template_version(id),
-    CONSTRAINT fk_ei_src FOREIGN KEY (source_cascade_id) REFERENCES t_cascade(id),
-    CONSTRAINT fk_ei_tgt FOREIGN KEY (target_cascade_id) REFERENCES t_cascade(id),
-    
-    -- 防自环（DAG 校验在应用层做）
-    CONSTRAINT ck_ei_no_self_loop CHECK (source_cascade_id <> target_cascade_id),
-    
-    INDEX idx_ei_frv (forest_version_id),
-    INDEX idx_ei_src (source_cascade_id),
-    INDEX idx_ei_tgt (target_cascade_id)
-);
-
--- 变量绑定（forest 级别变量槽位的实际值）
-CREATE TABLE t_forest_variable_binding (
-    forest_version_id   VARCHAR(32)  NOT NULL,
-    variable_name       VARCHAR(128) NOT NULL,
-    type_ref            JSON         NOT NULL,
-    bound_value         JSON         NULL,      -- null = 设计时未填，运行时绑定
-    scope               ENUM('forest','dag','cascade') NOT NULL,
-    description         TEXT NULL,
-    
-    PRIMARY KEY (forest_version_id, variable_name),
-    CONSTRAINT fk_fvb_frv FOREIGN KEY (forest_version_id) REFERENCES t_forest_version(id) ON DELETE CASCADE
-);
 ```
+
+> **触发器一览**（共 6 个，覆盖 §10.11 中全部不变式）：
+> | 触发器 | 表 | 时机 | 强制的不变式 |
+> |--------|-----|------|------------|
+> | `trg_ctv_validate`         | t_command_template_version | BEFORE INSERT | main_struct 必有 opcode |
+> | `trg_ci_validate`          | t_command_instance         | BEFORE INSERT | main 单例、main role_index=0、terminal_marker 仅对 action、jump_target 与 marker 一致 |
+> | `trg_ci_validate_upd`      | t_command_instance         | BEFORE UPDATE | terminal_marker / jump_target 一致性 |
+> | `trg_ei_validate`          | t_edge_instance            | BEFORE INSERT | 无自环、target 必有 main、source action 无 terminal_marker、source/target 在同一 forest_version |
+> | `trg_bundle_validate`      | t_bundle                   | BEFORE INSERT | parent 同 forest_version、深度 ≤ 5、自动维护 nesting_depth |
+> | `trg_bundle_validate_upd`  | t_bundle                   | BEFORE UPDATE | 无嵌套环、维护 nesting_depth |
 
 #### 10.11.6 模板影响索引（用于 §10.12 影响分析）
 
@@ -7783,32 +8211,50 @@ CREATE TABLE t_template_usage_index (
 
 ```sql
 CREATE TABLE t_forest_promotion (
-    id                    VARCHAR(32) PRIMARY KEY,  -- frp_xxxxxxxx
-    forest_id             VARCHAR(32) NOT NULL,
-    forest_version_id     VARCHAR(32) NOT NULL,
-    proposed_by           BIGINT      NOT NULL,
-    proposed_category     VARCHAR(64) NULL,
+    id                    VARCHAR(32)  NOT NULL,             -- frp_xxxxxxxx
+    forest_id             VARCHAR(32)  NOT NULL,
+    forest_version_id     VARCHAR(32)  NOT NULL,
+    proposed_by           BIGINT       NOT NULL,
+    proposed_category     VARCHAR(64)  NULL,
     proposed_name         VARCHAR(255) NULL,
-    description           TEXT NULL,
-    
+    description           TEXT         NULL,
+
     status                ENUM('open','approved','rejected','withdrawn') NOT NULL DEFAULT 'open',
-    reviewer_id           BIGINT      NULL,
-    review_summary        TEXT        NULL,
-    closed_at             DATETIME(6) NULL,
-    
-    -- approved 时落到的官方 forest（可能新建一个 official forest，也可能更新已有官方版本）
-    official_forest_id    VARCHAR(32) NULL,
-    
-    submitted_at          DATETIME(6) NOT NULL,
-    
-    CONSTRAINT fk_frp_fr FOREIGN KEY (forest_id) REFERENCES t_forest(id),
-    CONSTRAINT fk_frp_frv FOREIGN KEY (forest_version_id) REFERENCES t_forest_version(id),
-    CONSTRAINT fk_frp_off FOREIGN KEY (official_forest_id) REFERENCES t_forest(id),
-    INDEX idx_frp_status (status, submitted_at),
-    -- 同 ForestVersion 不能并发多次提审：partial unique（MySQL 用应用层 + 唯一过滤索引模拟）
-    UNIQUE KEY uk_frp_version_open (forest_version_id, status)
+    reviewer_id           BIGINT       NULL,
+    review_summary        TEXT         NULL,
+    closed_at             DATETIME(6)  NULL,
+
+    official_forest_id    VARCHAR(32)  NULL,
+    submitted_at          DATETIME(6)  NOT NULL,
+
+    -- 5.7 没有 partial unique。用生成列把"open 行"绑到 forest_version_id（互斥），
+    -- "终态行"绑到自身 id（自然唯一），实现"同一 ForestVersion 只能有 1 个 open 提审"。
+    open_uniq_token       VARCHAR(64)  GENERATED ALWAYS AS
+        (IF(status = 'open', forest_version_id, CONCAT('_closed_', id))) STORED,
+
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_frp_open_per_version (open_uniq_token),
+    KEY idx_frp_status (status, submitted_at),
+    CONSTRAINT fk_frp_fr  FOREIGN KEY (forest_id)          REFERENCES t_forest(id),
+    CONSTRAINT fk_frp_frv FOREIGN KEY (forest_version_id)  REFERENCES t_forest_version(id),
+    CONSTRAINT fk_frp_off FOREIGN KEY (official_forest_id) REFERENCES t_forest(id)
 );
 ```
+
+#### 10.11.8 §3–§6 章其它表的 MySQL 5.7 落地清单
+
+> 第 3–6 章涉及的非 D3A 业务表（ValidationRun / CodegenRun / ChangeSet / Submission / Pipeline 等）按本节统一规则落地为 MySQL 5.7 兼容形式：
+
+| 原 SQL 元素 | 5.7 不强制 / 不支持 | 替换为 |
+|------------|-------------------|--------|
+| `t_validation_run.ck_vr_terminal CHECK(...)` | CHECK 不强制 | `BEFORE INSERT/UPDATE` 触发器：终态必有 phase1_verdict |
+| `t_validation_run.ck_vr_changeset CHECK(...)` | CHECK 不强制 | 同上：INCONCLUSIVE_WITH_CHANGESET 必有 changeset_id |
+| `INDEX idx_vr_lease (...) WHERE status='running'` | partial index 不支持 | 改 `KEY idx_vr_lease (lease_expires_at, status)`（双列索引） |
+| `t_codegen_run.trg_cr_check_gv_state` | 触发器，5.7 OK | 保持触发器，无需改 |
+| `t_changeset.ck_chgset_apply CHECK(...)` | CHECK 不强制 | 触发器：APPLIED 时 applied_to_graph_version_id / applied_validation_run_id 必填 |
+| `t_submission` partial unique（`(submitter_id, idempotency_key)` 含 NULL） | NULL 不参与 unique | `idempotency_key` 改 `NOT NULL DEFAULT ''`，应用层用空串表示无幂等键；或加生成列 `idem_token` 哨兵化 |
+| `t_review.uk_rv_submission` | OK | 不变 |
+| `t_pipeline_step.uk_ps_idem` | OK | 不变 |
 
 ---
 
@@ -8017,7 +8463,7 @@ class ForestPromotionService:
     async def withdraw(self, promotion_id: str, by: int) -> ForestPromotion: ...
 ```
 
-#### 10.13.5 状态机（追加到 §7）
+#### 10.13.5 状态机（详见 §7.16）
 
 ```
 ForestPromotion:
@@ -8214,7 +8660,7 @@ Body:
 
 ### 10.15 D3A → C/C++ 代码生成映射
 
-> 本节替代原 §10.1 中"D3A → C++ 映射模板"留白；落地 §5.1.5 `codegen-target` 中 `CppCodegenTarget` 的 D3A 实现。
+> 本节给出 §5.1.5 `codegen-target` 在 D3A 业务下的具体实现 `D3ACppCodegenTarget`。
 
 #### 10.15.1 映射规则总图
 
@@ -8367,7 +8813,7 @@ class D3ACppCodegenTarget(CodegenTarget):
 
 ---
 
-### 10.16 API 路径增量（追加到 §6.1.1 路由表）
+### 10.16 D3A 业务 API 路由
 
 ```
 ╔══════════════════════════════════════════════════════════════════════════════════╗
@@ -8384,7 +8830,7 @@ class D3ACppCodegenTarget(CodegenTarget):
 ║ GET       ║ /api/v1/meta-templates/export         ║ 导出 pack                  ║
 ║ GET       ║ /api/v1/meta-templates/{id}/impact    ║ 升级影响分析               ║
 ╠═══════════╬═══════════════════════════════════════╬════════════════════════════╣
-║  CommandTemplate 路由（替代原 Template 路由 12 条 → 14 条）                      ║
+║  CommandTemplate 路由（14 条）                                                  ║
 ╠═══════════╬═══════════════════════════════════════╬════════════════════════════╣
 ║ POST      ║ /api/v1/command-templates             ║ 创建                       ║
 ║ GET       ║ /api/v1/command-templates             ║ 列表 / 搜索                ║
@@ -8413,7 +8859,7 @@ class D3ACppCodegenTarget(CodegenTarget):
 ║ POST      ║ /api/v1/edge-templates/import         ║ 导入                       ║
 ║ GET       ║ /api/v1/edge-templates/export         ║ 导出                       ║
 ╠═══════════╬═══════════════════════════════════════╬════════════════════════════╣
-║  Forest 编辑路由（增量到原 Graph 路由）                                         ║
+║  Forest 编辑路由（6 条）                                                        ║
 ╠═══════════╬═══════════════════════════════════════╬════════════════════════════╣
 ║ POST      ║ /api/v1/forests/{id}/draft-patch      ║ 增量编辑 patch             ║
 ║ POST      ║ /api/v1/forests/{id}/validate         ║ 不保存仅校验               ║
@@ -8438,13 +8884,13 @@ class D3ACppCodegenTarget(CodegenTarget):
 
 ---
 
-### 10.17 状态机增量（追加到 §7）
+### 10.17 D3A 业务相关状态机汇总
 
 #### 10.17.1 §7.7 NodeTemplate 状态机的扩展
 
 > 原 §7.7 状态机不变（DRAFT / ACTIVE / DEPRECATED）。MetaTemplate / CommandTemplate / EdgeTemplate 三者共用此状态机。
 
-#### 10.17.2 §7.16 ForestPromotion 状态机（新增）
+#### 10.17.2 ForestPromotion 状态机（§7.16）
 
 ```
 状态：OPEN → APPROVED / REJECTED / WITHDRAWN
@@ -8461,7 +8907,7 @@ class D3ACppCodegenTarget(CodegenTarget):
   4. 同 ForestVersion 已 APPROVED 一次后，再次提审需选择新 ForestVersion
 ```
 
-#### 10.17.3 ImpactMigrationSaga（新增；归 §6.1.5 pipeline-orchestrator）
+#### 10.17.3 ImpactMigrationSaga（pipeline-orchestrator 编排，详见 §6.1.5）
 
 ```
 PipelineRequest.kind = "impact_migration"
@@ -8489,50 +8935,11 @@ saga steps:
 
 ---
 
-### 10.19 对原文档的修订点清单
+### 10.19 模拟器子系统
 
-> 落地本章需在第 1–9 章的相关位置做如下修订；编号对应原章节：
+> 模拟器按 D3A 的层级建模：Command 不能脱离 Cascade 单独执行；Cascade 是连线最小单位；Bundle 是代码生成对象；Edge 决定下一跳。模拟器子系统沿 **Command / Cascade / Edge / DAG / Bundle** 五层组织，与场景引擎（§4.2.2）/ 集成层 LLM 工具（§6.2.2）协同。
 
-| 原文档章节 | 修订内容 |
-|-----------|---------|
-| §1.3 限界上下文图 | 新增 BC：MetaTemplate / Edge；将 Node BC 改为 Command BC |
-| §2.1 模块清单 | 新增 16 个模块（见 §10.5 + §10.21.2）；总数 63 → 79 |
-| §3.1.3 node-simulator | 接口保持兼容；实现按 §10.21 重写为 CommandSimulator 体系 |
-| §4.2.2 scenario-engine | 内部 forest 遍历由 §10.21.9 ForestRunner 取代；模块对外职责不变 |
-| §3.1.1 node-definition | 重命名为 command-template-engine；属性 schema 改为 §10.7 PropertyDef；新增 MetaTemplate 引用 |
-| §3.1.2 node-registry | 重命名为 command-template-registry；缓存键加 `meta_template_version_id` 维度 |
-| §3.1.4 node-library | 拆为 command-template-library（积木）+ forest-template-library（工作流） |
-| §3.2.1 forest-structure | 新增 Cascade 一等公民；EdgeInstance 拆出独立实体；不变式补 §10.9.3 的 10 条 |
-| §3.2.2 forest-snapshot | snapshot_json 严格按 §10.9.4 契约；增加平铺子表写入 |
-| §5.1.5 codegen-target | CppCodegenTarget 中的 D3A 部分由 §10.15 的 D3ACppCodegenTarget 替代 |
-| §6.1.5 pipeline-orchestrator | 新增 ImpactMigrationSaga（kind=impact_migration） |
-| §7.7 NodeTemplate 状态机 | 重命名为 CommandTemplate 状态机；MetaTemplate / EdgeTemplate 复用 |
-| §7.8 GraphVersion 状态机 | 字段 `forked_from_version_id` + `fork_reason` 加入；不影响转移规则 |
-| §11.1 D3A 留白表 | 全部填充：每行后追加 `承载落地：参见 §10.X.Y` |
-| §11.4 错误码 | 追加 META / CMDTPL / EDGETPL / IMPACT / PROMOTION / FOREST 增量共 ~30 个 |
-| §11.5 领域事件 | 追加 MetaTemplate / CommandTemplate / EdgeTemplate / Promotion / Impact 系列共 12 个 |
-
----
-
-### 10.20 迁移路径建议（从 NodeTemplate 数据到本设计）
-
-> 若已存在生产数据：
-
-1. 创建 `t_meta_template` + 1 条 seed MetaTemplate（含已有所有 enum / type 的总集）
-2. 写迁移脚本：扫描 `t_node_template`，按 name 分组拆出 CommandTemplate
-3. `t_node_template_version.definition` 中的 `extensions` 字段映射到 `t_command_template_version.properties_schema`
-4. `t_node_instance` 数据拆为 `t_cascade` + `t_command_instance`（按业务规则确定 main/action 角色）
-5. `t_edge` 数据按是否引用 EdgeTemplate 决定保留还是创建默认 EdgeTemplate
-
-具体迁移脚本由 schema-migration 模块按 §8.0.9（schema 演进外部化）执行。
-
----
-
-### 10.21 Tool 子系统重写（替代原 §3.1.3 node-simulator + §4.2.2 scenario-engine 的实现）
-
-> **重写动机**：旧设计中"Tool/Simulator"是按"单节点 = 单工具"组织的（NodeSimulator 接口 + ScenarioRunner 拓扑遍历），与 D3A 实际业务概念（Command 不能脱离 Cascade 单独执行、Cascade 才是连线最小单位、Bundle 是代码生成对象、Edge 决定下一跳）不匹配。本节按 Command / 级跳 / 边 / DAG / Bundle 的层级**重新拆模拟器**；接口与原文档 §3.1.3 / §4.2.2 / §6.2.2 兼容（保留 NodeSimulator 类名作 alias，但内部转调新接口）。
-
-#### 10.21.1 子系统总图
+#### 10.19.1 子系统总图
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -8587,20 +8994,18 @@ saga steps:
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-#### 10.21.2 模块清单（追加到 §10.5 表）
+#### 10.19.2 模块清单
 
-| # | 模块 | 层级 | 限界上下文 | 替代原模块 |
-|---|------|------|-----------|-----------|
-| 12.11 | command-simulator | Domain | Command | 替代 §3.1.3 node-simulator 的具体实现 |
-| 12.12 | cascade-simulator | Domain | Graph | 新增 |
-| 12.13 | edge-resolver | Domain | Graph | 新增（取代旧 ScenarioRunner 中"边语义"逻辑） |
-| 12.14 | dag-runner | Domain | Graph | 新增（取代旧 ScenarioRunner 拓扑游走逻辑） |
-| 12.15 | bundle-simulator | Domain | Graph + Phase2 | 新增 |
-| 12.16 | forest-runner | Domain | Phase1 | 替代 §4.2.2 scenario-engine 中 ScenarioRunner 的实现 |
+| # | 模块 | 层级 | 限界上下文 | 职责 |
+|---|------|------|-----------|------|
+| 12.11 | command-simulator | Domain | Command | 单条命令实例的执行（Pure / LLM / Hybrid 三态） |
+| 12.12 | cascade-simulator | Domain | Graph | 一个级跳的 main → actions 顺序执行与信号聚合 |
+| 12.13 | edge-resolver | Domain | Graph | 边语义判断决定下一跳 |
+| 12.14 | dag-runner | Domain | Graph | 按边激活的 DAG 游走 + 调用栈维护 |
+| 12.15 | bundle-simulator | Domain | Graph + Phase2 | Bundle 内部子 DAG 的整体执行与对象签名抽取 |
+| 12.16 | forest-runner | Domain | Phase1 | 一个 scenario × 一棵 forest 的完整执行入口 |
 
-> 模块总数：73 → **79**
-
-#### 10.21.3 上下文与值对象
+#### 10.19.3 上下文与值对象
 
 ```python
 @dataclass(frozen=True)
@@ -8623,6 +9028,10 @@ class SimContext:
     
     # Sandbox 资源（仅供 HybridCommandSimulator 在沙箱中跑参考实现时使用）
     sandbox_runtime: SandboxRuntime | None
+    
+    # 调用栈：DAGRunner 维护，支持 a→m call / terminal_marker=return 的"返回上一层"语义
+    # 元素是 cascade_id；最顶为最近一次 a→m 进入的 caller
+    call_stack: tuple[str, ...]
 
 @dataclass(frozen=True)
 class CommandResult:
@@ -8670,7 +9079,7 @@ class BundleRunResult:
     object_signature: dict        # 等价于"Bundle 对应对象的入参 + 出参形态"
 ```
 
-#### 10.21.4 模块详细设计：`command-simulator`
+#### 10.19.4 模块详细设计：`command-simulator`
 
 > **限界上下文**：Command   **部署位置**：Worker（shared lib）
 > **依赖**：command-template-engine, command-property-evaluator, llm-agent-loop
@@ -8727,7 +9136,7 @@ class CommandSimulatorFactory:
 - `test_variable_ref_unbound_raises`
 - `test_option_absent_property_not_passed_to_simulator`
 
-#### 10.21.5 模块详细设计：`cascade-simulator`
+#### 10.19.5 模块详细设计：`cascade-simulator`
 
 > **限界上下文**：Graph   **部署位置**：Worker
 > **依赖**：command-simulator
@@ -8766,7 +9175,7 @@ class CascadeSimulator:
 - `test_action_can_read_main_output`
 - `test_action_signal_overrides_main`
 
-#### 10.21.6 模块详细设计：`edge-resolver`
+#### 10.19.6 模块详细设计：`edge-resolver`
 
 > **限界上下文**：Graph   **部署位置**：shared lib
 > **依赖**：edge-template
@@ -8783,33 +9192,56 @@ class EdgeResolver:
         current_cascade: Cascade,
         cascade_result: CascadeResult,
         outgoing_edges: list[EdgeInstance],
-    ) -> str | None:
+    ) -> ResolveOutcome:
         """
-        返回下一个 cascade_id；None 表示没有出边（DAG 终点）。
-        
-        决策规则（每条出边独立判断 → 全部满足 → 选 priority 最低者）：
-          1. 先按 source_endpoint 过滤：取出 source 命中本次 cascade_result 的边
-             - source.role=main → 永远命中
-             - source.role=action,role_index=k → 仅当 cascade_result.action_results[k] 命中
-          2. 对每条候选边，按 EdgeTemplate.semantic_constraints 求值：
-             - 例：yes_branch 命中条件 = action_result.outgoing_signals["result_yes"] == True
-          3. 多条命中 → 报错（设计期约束应防止此情况；运行时给 TOOL_003）
-          4. 零条命中 → 返回 None（DAG 走到尽头）
+        返回 ResolveOutcome；可能是：
+          - GoTo(next_cascade_id)
+          - Return(returning_to_caller_cascade_id)   # 来自 terminal_marker='return'
+          - JumpOut(jump_target)                     # 来自 terminal_marker='jump_out'
+          - Stop()                                   # 来自 terminal_marker='terminal' 或零出边
+
+        决策规则（按优先级从高到低）：
+          1. **先看 terminal_marker（不参与边决策）**：
+             遍历 cascade_result.action_results；只要任一 action.terminal_marker 非 NULL：
+               - 'return'   → 返回 ResolveOutcome.Return(caller=ctx.call_stack.top())
+               - 'jump_out' → 返回 ResolveOutcome.JumpOut(target=that_action.jump_target)
+               - 'terminal' → 返回 ResolveOutcome.Stop()
+             这一步即使有出边也忽略（DB 触发器 trg_ei_validate 已禁止此类 action 作为 source；
+             此处兜底以防 DB 数据漂移）
+          2. **常规出边决策**：
+             a. 按 source_endpoint 过滤：source 命中本次 cascade_result 的边
+                - source.role=main      → 永远命中
+                - source.role=action,k  → 仅当 cascade_result.action_results[k] 命中
+             b. 对每条候选边，按 EdgeTemplate.semantic_constraints 求值
+                例：yes_branch 命中条件 = action.outgoing_signals["result_yes"] == True
+             c. 多条命中 → TOOL_003（设计期应防止此情况）
+             d. 零条命中 → ResolveOutcome.Stop()（DAG 自然走到尽头）
         """
+
+@dataclass(frozen=True)
+class ResolveOutcome:
+    kind: Literal["goto", "return", "jump_out", "stop"]
+    next_cascade_id: str | None = None
+    return_to_cascade_id: str | None = None
+    jump_target: str | None = None
 ```
 
 **反模式**：
 
 - ❌ 把 edge 决策逻辑写到业务 code 里（必须全部走 EdgeTemplate.semantic_constraints + 本模块）
 - ❌ 用 LLM 决定"走哪条边"（违反 §6.2.3 forced schema 原则；边语义必须是结构化判断）
+- ❌ 在有 terminal_marker 的 action 上还判断出边（即使数据上漂移有出边，也要按 terminal_marker 优先）
 
 **关键测试**：
 
 - `test_yes_branch_picks_correct_target`
 - `test_action_endpoint_only_fires_when_action_signal_set`
 - `test_ambiguous_edges_raise_tool_003`
+- `test_return_marker_short_circuits_outgoing_edges`
+- `test_jump_out_marker_returns_jump_target`
+- `test_terminal_marker_stops_dag_walk`
 
-#### 10.21.7 模块详细设计：`dag-runner`
+#### 10.19.7 模块详细设计：`dag-runner`
 
 > **限界上下文**：Graph   **部署位置**：Worker
 > **依赖**：cascade-simulator, edge-resolver, dag-compute
@@ -8830,21 +9262,29 @@ class DAGRunner:
         ctx: SimContext,
     ) -> DAGRunResult:
         """
-        1. 从 dag.root_cascade 开始
-        2. 队列：deque([root_cascade])
-        3. 当队列非空且 deadline 未到：
+        1. 从 dag.root_cascade 开始；维护 call_stack 处理 a→m call / return：
+             - a→m 边（source.role='action'）触发"call"语义 → 当前 cascade 入 call_stack
+             - terminal_marker='return' → 弹栈，回到 caller cascade 的下一跳决策点
+             - terminal_marker='jump_out' → 整个 DAG 终止，记录 jump_target
+        2. 主循环（直到 outcome=stop / queue 空 / deadline 到）：
              current = pop_left
-             if current visited → 跳过（防御）
              cascade_result = await CascadeSimulator.run(current)
-             outgoing = [e for e in dag.edges if e.source_cascade_id == current.id]
-             next_cascade = EdgeResolver.next(current, cascade_result, outgoing)
-             if next_cascade: queue.append(next_cascade)
-        4. 返回 DAGRunResult
-        
+             outcome = EdgeResolver.next(current, cascade_result, outgoing_edges_of(current))
+             match outcome.kind:
+                 'goto'     → 若来自 a→m call：push current 到 call_stack；
+                              queue.append(outcome.next_cascade_id)
+                 'return'   → caller = call_stack.pop()；从 caller 的"非 a→m 出边"继续
+                 'jump_out' → 记录 jump_target，结束本 DAG
+                 'stop'     → 自然终止（叶子 cascade）
+        3. 返回 DAGRunResult（含 visited / cascade_results / final_outcome / jump_target）
+
         执行模型：
-          DAG 在级跳层面是有向无环的，但运行时游走是"按边激活"的线性序列：
-          每次只跟一条边走，因此天然不会回环。
-          若分支并存（如 yes/no 都命中）→ EdgeResolver 报错。
+          DAG 在级跳层面是有向无环（设计期 §10.9.3 #6 保证），但运行时为"按边激活的线性序列"。
+          a→m 边表示"调用"（进入 bundle / 子流程），return 标记表示"返回调用栈上一层"。
+          原型 DAG #1 的语义即：
+            cas_01.main → cas_02.main → cas_03 ↓
+            cas_02.action --call→ cas_O1.main → … → cas_O3.action[return]
+            cas_O2.action --call→ cas_I1.main → cas_I2.action[return]
         """
 ```
 
@@ -8864,7 +9304,7 @@ class DAGRunner:
 - `test_dag_terminates_on_zero_outgoing`
 - `test_runtime_cycle_detected_raises_tool_004`
 
-#### 10.21.8 模块详细设计：`bundle-simulator`
+#### 10.19.8 模块详细设计：`bundle-simulator`
 
 > **限界上下文**：Graph + Phase2   **部署位置**：Worker
 > **依赖**：dag-runner
@@ -8907,11 +9347,11 @@ class BundleSimulator:
 - `test_bundle_signature_extraction`
 - `test_bundle_with_internal_branches`
 
-#### 10.21.9 模块详细设计：`forest-runner`
+#### 10.19.9 模块详细设计：`forest-runner`
 
 > **限界上下文**：Phase1   **部署位置**：Worker
 > **依赖**：dag-runner, scenario-comparator, failure-attribution
-> **被依赖**：scenario-engine（替代原 §4.2.2 ScenarioRunner 中 forest 遍历部分）
+> **被依赖**：scenario-engine（§4.2.2，作为 Phase1 入口调用 forest-runner）
 
 ```python
 class ForestRunner:
@@ -8941,23 +9381,20 @@ class ForestRunner:
 
 **与 §4.2.2 scenario-engine 的关系**：
 
-- `scenario-engine` 模块继续作为 Phase1 的 Handler 入口（保留原职责：管理多 scenario 并行调度）
-- `forest-runner` 是其内部新拆出来的"单 scenario × 单 forest"子单元
-- 旧 `ScenarioRunner.run_one()` 内部改为：`return await ForestRunner.run_scenario(...)`（保留签名兼容）
+- `scenario-engine`（§4.2.2）作为 Phase1 的 Handler 入口，管理多 scenario 并行调度
+- 单 scenario × 单 forest 的执行委托 `forest-runner`（§10.19.9）
 
-#### 10.21.10 与原文档承载体的对接矩阵
+#### 10.19.10 与其它子系统的协同矩阵
 
-| 原文档承载 | 本节落地 | 对接关系 |
-|------------|---------|---------|
-| §3.1.3 NodeSimulator ABC | §10.21.4 CommandSimulator ABC | 接口签名一一对应；`NodeSimulator = alias of CommandSimulator` |
-| §3.1.3 NodeSimulatorFactory | §10.21.4 CommandSimulatorFactory | 同 |
-| §3.1.3 SimContext | §10.21.3 SimContext | 字段扩展（加 variable_bindings、sandbox_runtime） |
-| §4.2.2 ScenarioRunner | §10.21.9 ForestRunner（被 ScenarioRunner 调用） | 重构而非替代 |
-| §4.2.2 SimContext.upstream_outputs / tables | 由 CascadeResult.cascade_signals 取代 | 新机制更贴 D3A 业务（信号 vs 数据流） |
-| §6.2.5 LLMAgent | 仍由 LlmCommandSimulator 调用 | 不变 |
-| §7.12 Scenario Execution 状态机 | 不变（仍是 PENDING/AGENT_RUNNING/COMPARING/ATTRIBUTING/DONE） | ForestRunner 是 AGENT_RUNNING 的实现细节 |
+| 协同对象 | 角色 | 对接关系 |
+|---------|------|---------|
+| §3.1.3 node-simulator | 命令模拟器 ABC | command-simulator 实现该 ABC |
+| §4.2.2 scenario-engine | Phase1 入口 Handler | 委托 forest-runner 执行单 scenario |
+| §6.2.5 llm-agent-loop | LLM Agent 循环 | LlmCommandSimulator 调用之 |
+| §6.2.6 sandbox-runtime | 沙箱抽象 | HybridCommandSimulator 用于跑参考实现 |
+| §7.12 Scenario Execution 状态机 | 状态规约 | forest-runner 是其 AGENT_RUNNING 阶段的实现 |
 
-#### 10.21.11 状态机：Cascade Execution（新增 §7.17）
+#### 10.19.11 状态机引用：Cascade Execution（详见 §7.17）
 
 ```
 状态：PENDING → MAIN_RUNNING → ACTIONS_RUNNING → DONE / ERROR
@@ -8974,7 +9411,7 @@ class ForestRunner:
 - main 完成前不进入 ACTIONS_RUNNING
 - ERROR 时已完成的 main / action 结果保留在 CascadeResult 中（用于事后归因）
 
-#### 10.21.12 性能预算
+#### 10.19.12 性能预算
 
 | 场景 | 目标 |
 |------|------|
@@ -8985,41 +9422,50 @@ class ForestRunner:
 | DAGRunner（50 cascade DAG） | < 5min（含 LLM） |
 | ForestRunner（一个 scenario，100 cascade） | < 10min |
 
----
+------
 
-### 11.1 D3A 业务模型落地（原"留白项"现已全部落地）
+## 第 11 章 术语 / 错误码 / 事件总表 / 完成度自检
 
-> 原"留白项"在第 10 章已全部落地。下表保留作为追溯索引：
+### 11.1 D3A 业务能力索引
 
-| 原留白项           | 状态         | 落地位置                                   | 落地形式                                           |
-| ------------------ | ------------ | ------------------------------------------ | -------------------------------------------------- |
-| D3A 节点 Schema    | ✅ 已落地    | §10.6 MetaTemplate + §10.7 CommandTemplate | MetaTemplate 类型字典 + CommandTemplate properties_schema（含 option / type_option / 变量占位） |
-| D3A 输入格式       | ✅ 已落地    | §10.9 Forest 平铺数据结构 + §10.15.4 变量绑定 | snapshot_json 完整契约 + VariableSlot 设计期/运行期分离 |
-| D3A 输出格式       | ✅ 已落地    | §10.15 D3A → C/C++ 代码生成映射            | 通用渲染器 + Bundle/Cascade/Edge 控制流映射         |
-| D3A → C++ 映射模板 | ✅ 已落地    | §10.15 D3ACppCodegenTarget                 | render_meta_types / render_command / render_bundle / render_main |
-| D3A 节点模拟器     | ✅ 已落地    | §10.21 Tool 子系统重写                     | CommandSimulator / CascadeSimulator / DAGRunner / BundleSimulator 四级模拟器 |
-| D3A 内置模板包     | ✅ 已落地    | §10.13 forest-template-library + §10.7 import_pack | 官方模板库分类 + JSON pack 导入接口                 |
-| 指令变更影响森林   | ✅ 已落地    | §10.12 模板版本变更与影响传播              | template-impact-analyzer + ImpactMigrationSaga + t_template_usage_index |
-| 用户私有/官方分库  | ✅ 已落地    | §10.13 官方模板库与社区贡献                | t_forest.scope + t_forest_promotion + 提审 saga    |
-| 编辑器交互后端     | ✅ 已落地    | §10.14 编辑器后端契约                      | 抽屉视图 / 悬浮提示 / Patch API                    |
+> 按业务能力快速定位实现章节：
 
-### 11.2 后续补全 D3A 的操作路径
+| 业务能力 | 实现章节 | 关键载体 |
+|---------|---------|---------|
+| 指令模板 / 元数据 | §10.6 MetaTemplate + §10.7 CommandTemplate | 类型字典 + properties_schema（含 option / type_option / 变量占位） |
+| Forest 数据契约 | §10.9 + §10.15.4 | snapshot_json 完整契约 + VariableSlot 设计期 / 运行期分离 |
+| C/C++ 代码生成 | §10.15 | 通用渲染器 + Bundle / Cascade / Edge 控制流映射 + D3ACppCodegenTarget |
+| 指令模拟器 | §10.19 | CommandSimulator / CascadeSimulator / EdgeResolver / DAGRunner / BundleSimulator / ForestRunner |
+| 官方模板库 | §10.13 | t_forest.scope + t_forest_promotion + 提审 saga + 官方模板包导入 |
+| 影响传播 | §10.12 | template-impact-analyzer + ImpactMigrationSaga + t_template_usage_index |
+| 编辑器后端契约 | §10.14 | 抽屉视图 / 悬浮提示 / Patch API |
+| 表达式 DSL | §10.10 | option / type_option AST + 求值器 + 静态校验 |
+
+### 11.2 D3A 业务投产路径
+
+业务上线按以下顺序由对应负责人推进：
 
 ```
-1. 确定 D3A 指令规范（JSON Schema + 语义）
-   → 产出：d3a-schema.json
+1. 录入 MetaTemplate（芯片硬件团队）
+   → 把 EnumType / ValueType / CompositeType / VariableSlot 一次性录入；
+     发布 ACTIVE 版本（§10.6）。
 
-2. 实现 codegen-target
-   → 新建 CppD3ACodegenTarget 类，注册到工厂；不动 Phase2 编排
+2. 录入 CommandTemplate 包（D3A 实现负责人）
+   → 30 个指令的 properties_schema（含 option / type_option / 变量声明 / opcode）；
+     批量导入接口 POST /api/v1/command-templates/import（§10.16）。
 
-3. 填充 node-library 种子数据
-   → JSON Pack 导入；不动 node-registry
+3. 录入 EdgeTemplate 包（D3A 实现负责人）
+   → m→m / a→m / yes / no / call 等边类型；
+     POST /api/v1/edge-templates/import。
 
-4. 实现 / 扩展 simulator
-   → 实现 D3ASimulator，注册到工厂
+4. 实现 D3ACppCodegenTarget Jinja2 模板（D3A 实现负责人）
+   → 按 §10.15.6 的接口；注册到 CodegenTargetFactory。
 
-5. 扩展 case-synthesizer
-   → 加 D3A 输入 / 输出格式支持；不动 sandbox-executor
+5. 录入官方 Forest 模板包（产品 / 架构）
+   → 典型工作流的种子 forest（§10.13）；提审审批通过后入官方库。
+
+6. 沙箱镜像与 LLM 凭证（DevOps）
+   → cmake / make / D3A SDK 镜像；secret-vault 注入 LLM API key。
 ```
 
 ### 11.3 术语表（完整版）
@@ -9043,9 +9489,9 @@ class ForestRunner:
 | Schema Version  | 演进   | 用于追踪状态对象的格式版本                                   |
 | D3A             | 业务   | 指令集规范（待定）                                           |
 
-### 11.4 错误码总表（含 D3A 业务模型增量）
+### 11.4 错误码总表
 
-> **拆分说明**：原 RUN 系列拆为 VAL（ValidationRun）+ CDG（CodegenRun）两族；新增 CHANGESET、SUBMISSION 两族；REVIEW 系列改为绑 Submission。
+> Run 类错误码按聚合根分族：VAL（ValidationRun）/ CDG（CodegenRun）。其余按业务域分族：CHANGESET / SUBMISSION / REVIEW（绑 Submission）/ META / CMDTPL / EDGETPL / FOREST / IMPACT / PROMOTION / TOOL / SYSTEM。
 
 #### VAL 系列（ValidationRun 执行）
 
@@ -9197,7 +9643,7 @@ class ForestRunner:
 | `DB_002` | 数据库事务冲突（乐观锁） | 409 | 重试 3 次 |
 | `DB_003` | MongoDB 写入失败 | 500 | 降级到 MySQL outbox |
 
-#### META 系列（元模板，新增）
+#### META 系列（元模板）
 
 | 错误码 | 含义 | HTTP | 处理方式 |
 |--------|------|------|---------|
@@ -9209,7 +9655,7 @@ class ForestRunner:
 | `META_006` | CompositeType 引用的子类型不存在 | 422 | - |
 | `META_007` | 当前版本仍被 N 个 ACTIVE 的 CommandTemplate 引用，不可 deprecate | 409 | 提示先升级引用方 |
 
-#### CMDTPL 系列（指令模板，替代原 TEMPLATE 系列；旧错误码保留兼容）
+#### CMDTPL 系列（指令模板）
 
 | 错误码 | 含义 | HTTP | 处理方式 |
 |--------|------|------|---------|
@@ -9223,7 +9669,7 @@ class ForestRunner:
 | `CMDTPL_008` | 当前版本仍被 N 个 ForestVersion 引用，不可强制 deprecate | 409 | 提示走 ImpactMigrationSaga |
 | `CMDTPL_009` | name 已存在（同 scope+owner） | 409 | - |
 
-#### EDGETPL 系列（边模板，新增）
+#### EDGETPL 系列（边模板）
 
 | 错误码 | 含义 | HTTP | 处理方式 |
 |--------|------|------|---------|
@@ -9233,7 +9679,7 @@ class ForestRunner:
 | `EDGETPL_004` | 引用 MetaTemplate 中类型不存在 | 422 | - |
 | `EDGETPL_005` | name 已存在 | 409 | - |
 
-#### FOREST 系列（增量到原 GRAPH，新增 12 项）
+#### FOREST 系列（森林结构）
 
 | 错误码 | 含义 | HTTP | 处理方式 |
 |--------|------|------|---------|
@@ -9250,7 +9696,7 @@ class ForestRunner:
 | `FOREST_020` | type_resolution 无 case 命中且无 fallback | 422 | - |
 | `FOREST_021` | Patch 操作的 base_version_id 已被超越（乐观锁冲突） | 409 | 提示重 fetch + merge |
 
-#### IMPACT 系列（影响分析与级联，新增）
+#### IMPACT 系列（影响分析与级联）
 
 | 错误码 | 含义 | HTTP | 处理方式 |
 |--------|------|------|---------|
@@ -9258,7 +9704,7 @@ class ForestRunner:
 | `IMPACT_002` | 升级 saga 检测到不兼容变更，需人工介入 | 200 | 含 partial_migration 报告 |
 | `IMPACT_003` | 影响 forest 数量过大（>1000），需分批迁移 | 422 | 分批触发 |
 
-#### PROMOTION 系列（提审，新增）
+#### PROMOTION 系列（提审）
 
 | 错误码 | 含义 | HTTP | 处理方式 |
 |--------|------|------|---------|
@@ -9280,7 +9726,7 @@ class ForestRunner:
 
 ---
 
-### 11.5 领域事件总表（含 D3A 业务模型增量）
+### 11.5 领域事件总表
 
 > 总计 = ValidationRun 6 + CodegenRun 8 + Run-Common 5 + Phase1 8 + Phase2 6 + Phase3 10 + Step 4 + Template 5 + GraphVersion 5 + ChangeSet 4 + Submission 5 + Review 6 + Comment 3 + Sandbox/LLM 4 + Cost 1 = **80**
 >
@@ -9441,7 +9887,7 @@ class ForestRunner:
 |------|---------|--------|
 | `BudgetThresholdExceeded` | 预算达到 80% 阈值 | Metrics, Alert |
 
-#### MetaTemplate 事件（4 个，新增）
+#### MetaTemplate 事件（4 个）
 
 | 事件 | 发布时机 | 消费者 |
 |------|---------|--------|
@@ -9450,9 +9896,7 @@ class ForestRunner:
 | `MetaTemplateDeprecated` | ACTIVE → DEPRECATED | AuditLog |
 | `MetaTemplateImpactReportGenerated` | TemplateImpactAnalyzer 完成 | WebSocket 推送通知所有者 |
 
-#### CommandTemplate 事件（5 个，扩充原 NodeTemplate 5 项）
-
-> 命名兼容：原 `TemplateUpdated` / `TemplatePublished` / `TemplateForked` / `TemplateDeprecated` / `TemplateCreated` 仍生效；下面是 D3A 业务术语事件，payload 携带 `template_kind="command"`。
+#### CommandTemplate 事件（5 个）
 
 | 事件 | 发布时机 | 消费者 |
 |------|---------|--------|
@@ -9462,7 +9906,7 @@ class ForestRunner:
 | `CommandTemplateDeprecated` | 废弃 | AuditLog, 引用方告警 |
 | `CommandTemplateImpactReportGenerated` | 影响分析完成 | WebSocket（通知 forest 所有者） |
 
-#### EdgeTemplate 事件（3 个，新增）
+#### EdgeTemplate 事件（3 个）
 
 | 事件 | 发布时机 | 消费者 |
 |------|---------|--------|
@@ -9470,7 +9914,7 @@ class ForestRunner:
 | `EdgeTemplateVersionPublished` | 发布 | edge-template 缓存失效 |
 | `EdgeTemplateDeprecated` | 废弃 | AuditLog |
 
-#### Forest 编辑与提审事件（5 个，新增）
+#### Forest 编辑与提审事件（5 个）
 
 | 事件 | 发布时机 | 消费者 |
 |------|---------|--------|
@@ -9480,7 +9924,7 @@ class ForestRunner:
 | `ForestPromotionRejected` | 管理员拒绝 | AuditLog, WebSocket |
 | `ForestPromotionWithdrawn` | 提审人撤回 | AuditLog |
 
-#### 影响传播 saga 事件（3 个，新增）
+#### 影响传播 saga 事件（3 个）
 
 | 事件 | 发布时机 | 消费者 |
 |------|---------|--------|
@@ -9488,8 +9932,37 @@ class ForestRunner:
 | `ImpactMigrationForestForked` | 单个 forest 完成 fork | WebSocket（通知所有者） |
 | `ImpactMigrationSagaFinalized` | 所有 forest 处理完毕 | WebSocket, Metrics |
 
-> 上述 D3A 增量事件共 **20 个**，加上原 80 个，事件总表合计 **100 个**。
+> 事件总表合计 **100 个**：执行类（Run / Phase / Step / LLM / Sandbox）80 + 业务类（MetaTemplate / CommandTemplate / EdgeTemplate / Forest 编辑 / 提审 / 影响）20。
 
 ------
 
-> 修订记录：D3A 业务模型已在第 10 章全部落地，原 §10.1 留白项不再为 TBD。后续如有 D3A 指令清单变化，按 §10.12 影响传播流程处理。
+### 11.6 完成度自检
+
+实现进入开发前应满足下表所有勾选项。**外部依赖**列出本设计自身已确定但需要外部输入才能闭环的事项；这些事项不阻塞架构与基础模块开发，仅限定具体业务上线节奏。
+
+| 维度 | 项 | 状态 |
+|------|------|------|
+| **业务建模** | MetaTemplate / CommandTemplate / EdgeTemplate / Cascade / Bundle / Forest 聚合根定义 | ✅ |
+|              | 表达式 DSL（option / type_option / 变量绑定）AST 与求值器 | ✅ |
+|              | Forest snapshot_json 完整契约（含 computed 预算） | ✅ |
+|              | 模拟器子系统 6 模块（Command / Cascade / Edge / DAG / Bundle / Forest 五层） | ✅ |
+| **数据库**   | 全表 DDL（13 张主表 + 6 个触发器，MySQL 5.7 兼容） | ✅ |
+|              | 软删除 / 循环 FK / partial unique 5.7 适配规则 | ✅ |
+|              | 模板影响反向索引 `t_template_usage_index` | ✅ |
+| **状态机**   | 17 个状态机完整规约（含 ValidationRun / CodegenRun / GraphVersion / NodeTemplate / ForestPromotion / Cascade Execution） | ✅ |
+|              | 状态机联动总图 + 跨聚合 saga 编排 | ✅ |
+| **API**      | REST 路由总表（含 D3A 业务路由） | ✅ |
+|              | WebSocket 推送通道（4 条） | ✅ |
+|              | 编辑器 Patch API + 抽屉 / 悬浮契约 | ✅ |
+| **可靠性**   | outbox + relay + 至少一次投递 | ✅ |
+|              | deadline 透传链 / fencing token / lease | ✅ |
+|              | 沙箱强化（network none / read_only / cap_drop / seccomp） | ✅ |
+| **可观测**   | trace_id 跨进程透传协议 | ✅ |
+|              | 错误码 105+ / 事件 100 / 指标关键集 | ✅ |
+| **扩展性**   | 10 类插件注册体系（含 MetaTemplate 类型扩充 / EdgeTemplate 分类扩充 / ChangeSet 修改类型扩充） | ✅ |
+|              | Schema 演进外置脚本机制 | ✅ |
+| **外部依赖** | D3A 官方 MetaTemplate 内容（具体 EnumType 列表 / ValueType 字节宽 / CompositeType 布局） | ⏳ 由芯片硬件团队提供 |
+|              | D3A 官方 CommandTemplate 包（约 30 个指令的 properties_schema） | ⏳ 同上 |
+|              | D3ACppCodegenTarget 的 Jinja2 模板集 | ⏳ 由 D3A 实现负责人按 §10.15 框架填充 |
+|              | 沙箱 Docker 镜像（含 cmake / make / D3A SDK） | ⏳ 由 DevOps 提供 |
+|              | LLM Provider API key（Claude / OpenAI） | ⏳ 由运维注入 secret-vault |

@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>D3A Forest · horizontal</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1014;
+  --bg-elev:#1c2330;
+  --line:#232c3b;
+  --ink:#d8dee9;
+  --ink-dim:#8a96a8;
+  --ink-mute:#5b6678;
+  --main-stroke:#60a5fa;
+  --action-stroke:#c084fc;
+  --bundle-stroke:#facc15;
+  --bundle-stroke-2:#fb923c;
+  --edge-mm:#8a96a8;
+  --edge-am:#c084fc;
+  --return-tone:#4ade80;
+  --jumpout-tone:#ef4444;
+  --grid:rgba(255,255,255,.025);
+  --grid-strong:rgba(255,255,255,.05);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{
+  font-family:'Manrope',sans-serif;
+  background:var(--bg);color:var(--ink);
+  font-size:13px;-webkit-font-smoothing:antialiased;
+}
+
+.header{
+  height:50px;display:flex;align-items:center;gap:18px;
+  padding:0 18px;border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,#1a212c,#131922);
+}
+.title{font-family:'JetBrains Mono',monospace;font-size:12.5px;letter-spacing:.04em}
+.title b{color:#fff}
+.title span{color:var(--ink-mute);margin:0 8px}
+.legend{
+  margin-left:auto;display:flex;gap:14px;font-family:'JetBrains Mono',monospace;
+  font-size:10.5px;color:var(--ink-dim);
+}
+.lg{display:flex;align-items:center;gap:6px}
+.lg .ln{width:22px;height:2px;border-radius:1px}
+.lg .ln.mm{background:var(--edge-mm)}
+.lg .ln.am{background:var(--edge-am)}
+.lg .badge{
+  font-size:9px;padding:1px 5px;border-radius:3px;letter-spacing:.06em;
+  text-transform:uppercase;font-weight:700;border:1px solid;
+}
+.lg .badge.ret{color:var(--return-tone);border-color:rgba(74,222,128,.4);background:rgba(74,222,128,.08)}
+.lg .badge.jmp{color:var(--jumpout-tone);border-color:rgba(239,68,68,.4);background:rgba(239,68,68,.08)}
+
+.canvas{
+  position:fixed;top:50px;left:0;right:0;bottom:32px;
+  background-image:
+    radial-gradient(circle at 1px 1px, var(--grid-strong) 1px, transparent 0),
+    radial-gradient(circle at 1px 1px, var(--grid) 1px, transparent 0);
+  background-size:80px 80px, 16px 16px;
+  overflow:auto;
+}
+.canvas-inner{
+  position:relative;
+  width:3400px;height:1100px;
+}
+
+.edges{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1}
+
+.dag-header{
+  position:absolute;
+  display:flex;align-items:center;gap:10px;
+  font-family:'JetBrains Mono',monospace;
+  font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+}
+.dag-header .num{
+  width:26px;height:26px;border-radius:5px;
+  display:grid;place-items:center;
+  background:var(--bg-elev);border:1px solid var(--line);
+  color:#fff;font-weight:700;font-size:11px;
+}
+.dag-header .name{color:#fff;font-weight:600}
+.dag-header .desc{color:var(--ink-mute);font-size:10px;text-transform:none;letter-spacing:0}
+.dag-header .line{
+  flex:1;height:1px;background:var(--line);min-width:60px;margin-left:4px;max-width:1200px;
+}
+
+/* Cascade */
+.cascade{
+  position:absolute;
+  display:flex;flex-direction:column;gap:4px;
+  width:185px;
+  z-index:2;
+}
+.cmd{
+  border-radius:6px;
+  padding:7px 10px;
+  position:relative;
+  box-shadow:0 2px 0 rgba(0,0,0,.2), 0 6px 16px rgba(0,0,0,.35);
+}
+.cmd.main{
+  background:linear-gradient(180deg,#1f2c3e,#18222f);
+  border:1px solid rgba(96,165,250,.4);
+  border-left:3px solid var(--main-stroke);
+}
+.cmd.action{
+  background:linear-gradient(180deg,#271f33,#1f1a28);
+  border:1px solid rgba(192,132,252,.4);
+  border-left:3px solid var(--action-stroke);
+}
+.cmd-head{
+  display:flex;align-items:center;gap:6px;
+  font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;
+  color:#fff;
+}
+.cmd-head .tag{
+  font-size:8px;padding:1px 4px;border-radius:3px;
+  letter-spacing:.08em;text-transform:uppercase;font-weight:700;
+}
+.cmd.main .cmd-head .tag{background:rgba(96,165,250,.18);color:var(--main-stroke);border:1px solid rgba(96,165,250,.3)}
+.cmd.action .cmd-head .tag{background:rgba(192,132,252,.15);color:var(--action-stroke);border:1px solid rgba(192,132,252,.3)}
+.cmd-id{
+  margin-left:auto;font-family:'JetBrains Mono',monospace;
+  font-size:9px;color:var(--ink-mute);
+}
+
+/* return / jump-out 标记(不是边) */
+.cmd-marker{
+  display:inline-flex;align-items:center;gap:4px;
+  margin-top:5px;
+  font-family:'JetBrains Mono',monospace;font-size:8.5px;
+  padding:2px 6px;border-radius:9px;
+  letter-spacing:.08em;text-transform:uppercase;font-weight:700;
+  border:1px solid;
+}
+.cmd-marker.ret{color:var(--return-tone);border-color:rgba(74,222,128,.4);background:rgba(74,222,128,.08)}
+.cmd-marker.jmp{color:var(--jumpout-tone);border-color:rgba(239,68,68,.4);background:rgba(239,68,68,.08)}
+.cmd-marker .dot{width:5px;height:5px;border-radius:50%;background:currentColor;box-shadow:0 0 4px currentColor}
+
+.cas-id{
+  position:absolute;top:-15px;left:0;
+  font-family:'JetBrains Mono',monospace;font-size:9px;
+  color:var(--ink-mute);letter-spacing:.06em;
+  white-space:nowrap;
+}
+.cas-id b{color:var(--ink-dim)}
+
+/* Bundle */
+.bundle{
+  position:absolute;
+  border:1.5px dashed var(--bundle-stroke);
+  border-radius:14px;
+  background:rgba(250,204,21,.025);
+  z-index:0;
+}
+.bundle.inner{
+  border-color:var(--bundle-stroke-2);
+  background:rgba(251,146,60,.03);
+}
+.bundle-label{
+  position:absolute;top:-11px;left:16px;
+  background:var(--bg);padding:1px 9px;
+  font-family:'JetBrains Mono',monospace;font-size:10px;
+  color:var(--bundle-stroke);letter-spacing:.04em;
+  display:flex;align-items:center;gap:7px;
+  white-space:nowrap;
+}
+.bundle.inner .bundle-label{color:var(--bundle-stroke-2)}
+.bundle-label::before{
+  content:'';width:7px;height:7px;border-radius:50%;
+  background:currentColor;box-shadow:0 0 6px currentColor;
+}
+
+/* Edge labels */
+.elabel{
+  position:absolute;
+  font-family:'JetBrains Mono',monospace;font-size:9px;
+  background:var(--bg);padding:1px 6px;border-radius:9px;
+  border:1px solid var(--line);
+  transform:translate(-50%,-50%);
+  z-index:2;white-space:nowrap;
+  letter-spacing:.04em;
+}
+.elabel.mm{color:var(--ink-dim)}
+.elabel.am{color:var(--edge-am);border-color:rgba(192,132,252,.35)}
+
+.footer{
+  position:fixed;bottom:0;left:0;right:0;height:32px;
+  background:#0a0e13;border-top:1px solid var(--line);
+  display:flex;align-items:center;padding:0 18px;gap:20px;
+  font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--ink-mute);
+}
+.footer .item b{color:var(--ink)}
+.footer .spacer{flex:1}
+.footer .hint kbd{
+  background:var(--bg-elev);border:1px solid var(--line);
+  padding:1px 5px;border-radius:3px;font-size:9.5px;color:var(--ink-dim);margin:0 2px;
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="title"><b>forest</b><span>·</span>demo_3dags<span>·</span><span style="color:var(--ink-dim)">horizontal · scroll right →</span></div>
+  <div class="legend">
+    <div class="lg"><span class="ln mm"></span>main → main</div>
+    <div class="lg"><span class="ln am"></span>action → main</div>
+    <div class="lg"><span class="badge ret">return</span> · 不画线</div>
+    <div class="lg"><span class="badge jmp">jump-out</span> · 不画线</div>
+  </div>
+</div>
+
+<div class="canvas">
+  <div class="canvas-inner">
+
+    <!-- ============================================================
+         DAG #1 — 横向铺开 · 三层调用栈
+         主层(top row):    cas_01 ─m→m─ cas_02 ─m→m─ cas_03(COMMIT)
+                                   └─a→m─┐
+         outer Bundle (mid row):           cas_O1 ─m→m─ cas_O2 ─m→m─ cas_O3[ret]
+                                                   └─a→m─┐
+         inner Bundle (bottom row):                       cas_I1 ─m→m─ cas_I2[ret]
+         ============================================================ -->
+
+    <div class="dag-header" style="left:40px;top:24px;width:3300px">
+      <div class="num">1</div>
+      <div class="name">three_layer_call</div>
+      <div class="desc">三层调用栈横向铺开 · 主层 → outer bundle → inner bundle</div>
+      <div class="line"></div>
+    </div>
+
+    <!-- 主层 row (y ≈ 130) -->
+    <div class="cascade" style="left:80px;top:130px">
+      <div class="cas-id"><b>cas_01</b></div>
+      <div class="cmd main">
+        <div class="cmd-head"><span class="tag">main</span><span>FETCH_FRAME</span><span class="cmd-id">#0x02</span></div>
+      </div>
+      <div class="cmd action">
+        <div class="cmd-head"><span class="tag">action</span><span>SETUP_DMA</span><span class="cmd-id">#0xA0</span></div>
+      </div>
+    </div>
+
+    <div class="cascade" style="left:380px;top:130px">
+      <div class="cas-id"><b>cas_02</b></div>
+      <div class="cmd main">
+        <div class="cmd-head"><span class="tag">main</span><span>CMP_META_CMD</span><span class="cmd-id">#0x01</span></div>
+      </div>
+      <div class="cmd action">
+        <div class="cmd-head"><span class="tag">action</span><span>CALL_OUTER</span><span class="cmd-id">#0xA1</span></div>
+      </div>
+    </div>
+
+    <div class="cascade" style="left:680px;top:130px">
+      <div class="cas-id"><b>cas_03</b> · terminal</div>
+      <div class="cmd main">
+        <div class="cmd-head"><span class="tag">main</span><span>COMMIT_BUF</span><span class="cmd-id">#0x05</span></div>
+      </div>
+      <div class="cmd action">
+        <div class="cmd-head"><span class="tag">action</span><span>FLUSH_CACHE</span><span class="cmd-id">#0xA9</span></div>
+      </div>
+    </div>
+
+    <!-- outer Bundle (y ≈ 350) -->
+    <div class="bundle" style="left:560px;top:310px;width:1640px;height:200px">
+      <div class="bundle-label">BUNDLE · outer_recovery → class OuterRecovery</div>
+    </div>
+
+    <div class="cascade" style="left:600px;top:355px">
+      <div class="cas-id"><b>cas_O1</b></div>
+      <div class="cmd main">
+        <div class="cmd-head"><span class="tag">main</span><span>SCAN_RANGE</span><span class="cmd-id">#0x04</span></div>
+      </div>
+      <div class="cmd action">
+        <div class="cmd-head"><span class="tag">action</span><span>LOAD_PATTERN</span><span class="cmd-id">#0xA3</span></div>
+      </div>
+    </div>
+
+    <div class="cascade" style="left:900px;top:355px">
+      <div class="cas-id"><b>cas_O2</b></div>
+      <div class="cmd main">
+        <div class="cmd-head"><span class="tag">main</span><span>VERIFY_BLK</span><span class="cmd-id">#0x06</span></div>
+      </div>
+      <div class="cmd action">
+        <div class="cmd-head"><span class="tag">action</span><span>CALL_INNER</span><span class="cmd-id">#0xA4</span></div>
+      </div>
+    </div>
+
+    <div class="cascade" style="left:1980px;top:355px">
+      <div class="cas-id"><b>cas_O3</b> · outer tail</div>
+      <div class="cmd main">
+        <div class="cmd-head"><span class="tag">main</span><span>WRAP_UP</span><span class="cmd-id">#0x07</span></div>
+      </div>
+      <div class="cmd action">
+        <div class="cmd-head"><span class="tag">action</span><span>FINALIZE</span><span class="cmd-id">#0xAF</span></div>
+        <div class="cmd-marker ret"><span class="dot"></span>return</div>
+      </div>
+    </div>
+
+    <!-- inner Bundle (y ≈ 580) -->
+    <div class="bundle inner" style="left:1080px;top:540px;width:780px;height:200px">
+      <div class="bundle-label">BUNDLE · inner_helper → class InnerHelper</div>
+    </div>
+
+    <div class="cascade" style="left:1120px;top:585px">
+      <div class="cas-id"><b>cas_I1</b></div>
+      <div class="cmd main">
+        <div class="cmd-head"><span class="tag">main</span><span>RESET_REG</span><span class="cmd-id">#0x08</span></div>
+      </div>
+      <div class="cmd action">
+        <div class="cmd-head"><span class="tag">action</span><span>SET_FLAG</span><span class="cmd-id">#0xA5</span></div>
+      </div>
+    </div>
+
+    <div class="cascade" style="left:1620px;top:585px">
+      <div class="cas-id"><b>cas_I2</b> · inner tail</div>
+      <div class="cmd main">
+        <div class="cmd-head"><span class="tag">main</span><span>SYNC_BARRIER</span><span class="cmd-id">#0x0A</span></div>
+      </div>
+      <div class="cmd action">
+        <div class="cmd-head"><span class="tag">action</span><span>BARRIER_END</span><span class="cmd-id">#0xAB</span></div>
+        <div class="cmd-marker ret"><span class="dot"></span>return</div>
+      </div>
+    </div>
+
+
+    <!-- ============================================================
+         DAG #2 — jump-out 横向
+         ============================================================ -->
+    <div class="dag-header" style="left:40px;top:790px;width:3300px">
+      <div class="num">2</div>
+      <div class="name">jump_out_pattern</div>
+      <div class="desc">末端 action 标 JUMP_OUT · 不画线</div>
+      <div class="line"></div>
+    </div>
+
+    <div class="cascade" style="left:80px;top:880px">
+      <div class="cas-id"><b>cas_J1</b></div>
+      <div class="cmd main">
+        <div class="cmd-head"><span class="tag">main</span><span>FETCH_FRAME</span><span class="cmd-id">#0x02</span></div>
+      </div>
+      <div class="cmd action">
+        <div class="cmd-head"><span class="tag">action</span><span>SETUP_DMA</span><span class="cmd-id">#0xA0</span></div>
+      </div>
+    </div>
+
+    <div class="cascade" style="left:380px;top:880px">
+      <div class="cas-id"><b>cas_J2</b></div>
+      <div class="cmd main">
+        <div class="cmd-head"><span class="tag">main</span><span>DECODE_BLK</span><span class="cmd-id">#0x03</span></div>
+      </div>
+      <div class="cmd action">
+        <div class="cmd-head"><span class="tag">action</span><span>ACT_MASK</span><span class="cmd-id">#0xA2</span></div>
+      </div>
+    </div>
+
+    <div class="cascade" style="left:680px;top:880px">
+      <div class="cas-id"><b>cas_J3</b> · last in core</div>
+      <div class="cmd main">
+        <div class="cmd-head"><span class="tag">main</span><span>CMP_META_CMD</span><span class="cmd-id">#0x01</span></div>
+      </div>
+      <div class="cmd action">
+        <div class="cmd-head"><span class="tag">action</span><span>SIGNAL_EXIT</span><span class="cmd-id">#0xAE</span></div>
+        <div class="cmd-marker jmp"><span class="dot"></span>jump-out · core_net</div>
+      </div>
+    </div>
+
+
+    <!-- ============================================================
+         DAG #3 — 简单顺序横向
+         ============================================================ -->
+    <div class="cascade" style="left:1080px;top:880px">
+      <div class="cas-id"><b>cas_L1</b></div>
+      <div class="cmd main">
+        <div class="cmd-head"><span class="tag">main</span><span>FETCH_FRAME</span><span class="cmd-id">#0x02</span></div>
+      </div>
+      <div class="cmd action">
+        <div class="cmd-head"><span class="tag">action</span><span>SETUP_DMA</span><span class="cmd-id">#0xA0</span></div>
+      </div>
+    </div>
+
+    <div class="cascade" style="left:1380px;top:880px">
+      <div class="cas-id"><b>cas_L2</b></div>
+      <div class="cmd main">
+        <div class="cmd-head"><span class="tag">main</span><span>DECODE_BLK</span><span class="cmd-id">#0x03</span></div>
+      </div>
+      <div class="cmd action">
+        <div class="cmd-head"><span class="tag">action</span><span>ACT_MASK</span><span class="cmd-id">#0xA2</span></div>
+      </div>
+    </div>
+
+    <div class="cascade" style="left:1680px;top:880px">
+      <div class="cas-id"><b>cas_L3</b></div>
+      <div class="cmd main">
+        <div class="cmd-head"><span class="tag">main</span><span>SCAN_RANGE</span><span class="cmd-id">#0x04</span></div>
+      </div>
+      <div class="cmd action">
+        <div class="cmd-head"><span class="tag">action</span><span>LOAD_PATTERN</span><span class="cmd-id">#0xA3</span></div>
+      </div>
+    </div>
+
+    <div class="cascade" style="left:1980px;top:880px">
+      <div class="cas-id"><b>cas_L4</b> · terminal</div>
+      <div class="cmd main">
+        <div class="cmd-head"><span class="tag">main</span><span>COMMIT_BUF</span><span class="cmd-id">#0x05</span></div>
+      </div>
+      <div class="cmd action">
+        <div class="cmd-head"><span class="tag">action</span><span>FLUSH_CACHE</span><span class="cmd-id">#0xA9</span></div>
+      </div>
+    </div>
+
+    <!-- 第二个 DAG header 紧贴 DAG #3 上方 -->
+    <div class="dag-header" style="left:1040px;top:850px;width:1200px">
+      <div class="num">3</div>
+      <div class="name">linear_simple</div>
+      <div class="desc">纯 m→m</div>
+    </div>
+
+
+    <!-- ============================================================
+         EDGES (SVG)
+         所有 cascade 都是 left:X, width:185, 所以:
+           main 中心 (X+92, Y+18)  · main 右边 (X+185, Y+18)  · main 左边 (X, Y+18)
+           action 中心 (X+92, Y+62) · action 右边 (X+185, Y+62)
+         主层 main Y = 130+18 = 148
+         action Y = 130+44+18 = 192   (top:130 + main 高 ~36 + gap 4 + 约 18 偏移)
+         实际 action 顶约在 130+40 = 170, action 中心约 130+58 = 188
+         用近似值即可。
+         ============================================================ -->
+    <svg class="edges" viewBox="0 0 3400 1100" preserveAspectRatio="none">
+      <defs>
+        <marker id="amm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#8a96a8"/></marker>
+        <marker id="aam" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c084fc"/></marker>
+      </defs>
+
+      <!-- ===== DAG #1 主层 m→m (横线) ===== -->
+      <!-- cas_01.main(R)≈265,148 → cas_02.main(L)≈380,148 -->
+      <path d="M 265,148 L 380,148" stroke="#8a96a8" stroke-width="1.8" fill="none" marker-end="url(#amm)"/>
+      <!-- cas_02.main(R)≈565,148 → cas_03.main(L)≈680,148 -->
+      <path d="M 565,148 L 680,148" stroke="#8a96a8" stroke-width="1.8" fill="none" marker-end="url(#amm)"/>
+
+      <!-- ===== a→m : cas_02.action(R)≈565,188 → cas_O1.main(L)≈600,373 ===== -->
+      <!-- 走"右下肘形"路径 -->
+      <path d="M 565,188 L 590,188 L 590,373 L 600,373" stroke="#c084fc" stroke-width="1.8" fill="none" marker-end="url(#aam)"/>
+
+      <!-- ===== outer Bundle 内部 m→m ===== -->
+      <!-- cas_O1.main(R)≈785,373 → cas_O2.main(L)≈900,373 -->
+      <path d="M 785,373 L 900,373" stroke="#8a96a8" stroke-width="1.8" fill="none" marker-end="url(#amm)"/>
+      <!-- cas_O2.main(R)≈1085,373 → cas_O3.main(L)≈1980,373 (跨过 inner bundle 上方) -->
+      <path d="M 1085,373 L 1980,373" stroke="#8a96a8" stroke-width="1.8" fill="none" marker-end="url(#amm)"/>
+
+      <!-- ===== a→m : cas_O2.action(R)≈1085,413 → cas_I1.main(L)≈1120,603 ===== -->
+      <path d="M 1085,413 L 1110,413 L 1110,603 L 1120,603" stroke="#c084fc" stroke-width="1.8" fill="none" marker-end="url(#aam)"/>
+
+      <!-- ===== inner Bundle 内部 m→m ===== -->
+      <!-- cas_I1.main(R)≈1305,603 → cas_I2.main(L)≈1620,603 -->
+      <path d="M 1305,603 L 1620,603" stroke="#8a96a8" stroke-width="1.8" fill="none" marker-end="url(#amm)"/>
+
+      <!-- ===== DAG #2 m→m ===== -->
+      <path d="M 265,898 L 380,898" stroke="#8a96a8" stroke-width="1.8" fill="none" marker-end="url(#amm)"/>
+      <path d="M 565,898 L 680,898" stroke="#8a96a8" stroke-width="1.8" fill="none" marker-end="url(#amm)"/>
+
+      <!-- ===== DAG #3 m→m ===== -->
+      <path d="M 1265,898 L 1380,898" stroke="#8a96a8" stroke-width="1.8" fill="none" marker-end="url(#amm)"/>
+      <path d="M 1565,898 L 1680,898" stroke="#8a96a8" stroke-width="1.8" fill="none" marker-end="url(#amm)"/>
+      <path d="M 1865,898 L 1980,898" stroke="#8a96a8" stroke-width="1.8" fill="none" marker-end="url(#amm)"/>
+    </svg>
+
+    <!-- Edge labels -->
+    <div class="elabel mm" style="left:322px;top:148px">m→m</div>
+    <div class="elabel mm" style="left:622px;top:148px">m→m</div>
+    <div class="elabel am" style="left:590px;top:280px">a→m · call</div>
+    <div class="elabel mm" style="left:842px;top:373px">m→m</div>
+    <div class="elabel mm" style="left:1530px;top:373px">m→m</div>
+    <div class="elabel am" style="left:1110px;top:510px">a→m · call</div>
+    <div class="elabel mm" style="left:1462px;top:603px">m→m</div>
+
+    <div class="elabel mm" style="left:322px;top:898px">m→m</div>
+    <div class="elabel mm" style="left:622px;top:898px">m→m</div>
+
+    <div class="elabel mm" style="left:1322px;top:898px">m→m</div>
+    <div class="elabel mm" style="left:1622px;top:898px">m→m</div>
+    <div class="elabel mm" style="left:1922px;top:898px">m→m</div>
+
+  </div>
+</div>
+
+<div class="footer">
+  <div class="item">forest <b>demo_3dags</b></div>
+  <div class="item">3 dags · 13 cascades · 2 bundles</div>
+  <div class="spacer"></div>
+  <div class="hint">scroll <kbd>→</kbd> to explore</div>
+</div>
+
+</body>
+</html>
