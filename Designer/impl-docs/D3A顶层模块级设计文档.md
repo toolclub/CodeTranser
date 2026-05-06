@@ -4,7 +4,7 @@
 >
 > **读者**：架构 / 评审 / 实现负责人。
 >
-> **约束**：本设计在 D3A 节点 Schema、D3A → 目标语言映射等具体业务字段上保持留白（见第 10 章），承载体（结构、接口、状态机、可靠性骨架）已完整给出。
+> **约束**：本设计的承载体（结构、接口、状态机、可靠性骨架）由第 1–9 章给出；D3A 业务模型（MetaTemplate / CommandTemplate / EdgeTemplate / Cascade / Bundle / Forest / 影响传播 / 官方库 / 编辑器后端契约 / D3A→C++ 映射）由第 10 章落地；术语表 / 错误码 / 事件清单见第 11 章。
 
 ------
 
@@ -19,7 +19,8 @@
 - [第 7 章 16 个状态机完整规约](#第-7-章-16-个状态机完整规约)
 - [第 8 章 分布式与可靠性设计](#第-8-章-分布式与可靠性设计)
 - [第 9 章 扩展性机制](#第-9-章-扩展性机制)
-- [第 10 章 D3A 留白与术语 / 错误码 / 事件总表](#第-10-章-d3a-留白与术语--错误码--事件总表)
+- [第 10 章 D3A 业务模型与数据库设计](#第-10-章-d3a-业务模型与数据库设计)
+- [第 11 章 D3A 业务落地 / 术语 / 错误码 / 事件总表](#第-11-章-d3a-业务落地--术语--错误码--事件总表)
 
 ------
 
@@ -6595,20 +6596,2414 @@ else:
 
 ------
 
-## 第 10 章 D3A 留白与术语 / 错误码 / 事件总表
+## 第 10 章 D3A 业务模型与数据库设计
 
-### 10.1 D3A 相关留白项
+> **本章定位**：把第 1–9 章定义的"承载体"（聚合根接口、状态机、saga、可靠性骨架）填充为具体的 D3A 业务概念。本章替换原顶层文档中标注为 TBD 的 D3A 留白项；与原文档的命名（NodeTemplate / CascadeForest / NodeInstance）保持兼容——本章使用业务术语（CommandTemplate / Forest / CommandInstance），二者在代码层面是同一聚合根，名称只是语义对齐。
+>
+> **修订记录**：v1.0（2026-05-06）— 初版，对应原 §11.1（旧 §10.1）的 6 项留白全部落地。
 
-| 留白项             | 状态         | 依赖 D3A 什么        | 承载模块         | 顶层设计已就绪的承载体                  |
-| ------------------ | ------------ | -------------------- | ---------------- | --------------------------------------- |
-| D3A 节点 Schema    | **TBD**      | 具体指令定义         | node-definition  | `NodeTemplateDefinition` 结构载体       |
-| D3A 输入格式       | **TBD**      | 指令输入格式         | case-synthesizer | 输入规范化为 JSON Schema（内容待填）    |
-| D3A 输出格式       | **TBD**      | 指令输出格式         | case-synthesizer | 同上                                    |
-| D3A → C++ 映射模板 | **TBD**      | 指令到代码的对应关系 | codegen-target   | `CodegenTarget` 接口与模板槽位          |
-| D3A 节点模拟器     | **TBD**      | 模拟 D3A 节点行为    | node-simulator   | `HybridSimulator` 接口                  |
-| D3A 内置模板包     | **TBD**      | 官方 D3A 节点集      | node-library     | seed 数据位置                           |
+---
 
-### 10.2 后续补全 D3A 的操作路径
+### 10.1 全局概念层级总图
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  系统级管理（超级管理员）                                      │
+│   MetaTemplate（元模板）                                       │
+│     ├─ EnumType: 命名枚举（如 Enum1 / compareType）            │
+│     ├─ ValueType: 基础类型（u8/u16/u32/u64/bool/char[N]/…）   │
+│     ├─ CompositeType: 联合体 / 结构体类型                      │
+│     └─ VariableSlot: 变量槽位定义（${var} 的元信息）           │
+└─────────────────────────────────────────────────────────────┘
+                              │ FK
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│  模板管理（管理员 / 高级用户）                                 │
+│   CommandTemplate（指令模板，如 cmd1）                          │
+│     ├─ struct_kind: main_struct | action_struct                │
+│     ├─ properties: [PropertyDef…]                              │
+│     │    ├─ name / description                                 │
+│     │    ├─ type_ref → MetaTemplate.EnumType/ValueType/…       │
+│     │    ├─ presence_condition (option 表达式)                 │
+│     │    ├─ type_resolution (type_option 表达式)               │
+│     │    ├─ allow_variable: bool                              │
+│     │    ├─ default_value / validation_rules                   │
+│     │    └─ codegen_hints                                      │
+│     └─ codegen_target_template (D3A→C++ 映射)                  │
+│                                                                │
+│   EdgeTemplate（边模板，如 yes/no、组合、泛化）                  │
+│     ├─ display: { label, color, icon, line_style }            │
+│     ├─ properties: [PropertyDef…]                              │
+│     └─ semantic_constraints: { allow_action_source: bool, … }  │
+└─────────────────────────────────────────────────────────────┘
+                              │ 在 Forest 内引用（带版本快照）
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│  画布（设计师）                                                │
+│   Forest（森林，一块画布）                                      │
+│     ├─ Bundles: [Bundle…]    （框选；代码生成 → 1 对象）        │
+│     ├─ Cascades: [Cascade…]  （级跳；连线最小端点单位）         │
+│     │    └─ CommandInstances: [{template_snapshot, values}]   │
+│     │         ├─ 1 个 main_struct（顶部）                      │
+│     │         └─ 0..N 个 action_struct                        │
+│     ├─ Edges: [EdgeInstance…]                                 │
+│     │    ├─ source: cascade_id + (main | action_idx)         │
+│     │    ├─ target: cascade_id + main（target 强制 main）     │
+│     │    └─ template_snapshot + filled_properties             │
+│     └─ DAGs: [DAGView…]   （由 Cascade+Edge 计算得出，不落库）  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 10.2 与第 1–9 章命名对照
+
+| 第 1–9 章（顶层承载体） | 本章（D3A 业务模型） | 关系 |
+|------|------|------|
+| `NodeTemplate` | `CommandTemplate` | 同一个聚合根；本章用业务术语。原文 NodeTemplate 的 `extensions` 字段承载本章的 `properties_schema` |
+| `NodeInstance` | `CommandInstance` | 同一个实体 |
+| `Bundle` | `Bundle` | 不变（用户在画布上框出来的级跳分组） |
+| 原文无对应 | **`Cascade`（级跳）** | **新增层级**——位于 Bundle 与 CommandInstance 之间，是连线端点的最小单位 |
+| `Edge` | `EdgeInstance` + `EdgeTemplate` | 拆分：边实例（在 Forest 内）+ 边模板（管理员定义） |
+| `CascadeForest` | `Forest` | 同一聚合根；命名简化 |
+| 原文无对应 | **`MetaTemplate`** | **新增聚合根**——CommandTemplate 与 EdgeTemplate 都引用 MetaTemplate 的类型字典 |
+| `node-library` | 拆分为 `command-template-library` + `forest-template-library` | 模板库与森林模板库分离（前者积木、后者组装好的工作流） |
+
+> 第 1–9 章的代码标识符（NodeTemplate 等）保留有效，本章不要求重命名。命名对齐仅用于业务沟通；DB 表 / API 路径统一使用业务术语（`command_template`、`forest`、`cascade`）。
+
+### 10.3 关键设计决策
+
+| 决策 | 选择 | 理由 |
+|------|------|------|
+| MetaTemplate 与 CommandTemplate 是否合一 | **拆分两层** | 类型系统与指令定义生命周期不同；超级管理员 vs 普通管理员；类型变更影响面大于指令变更 |
+| 级跳是否独立聚合根 | **不独立持久化为聚合根，但是 Forest 聚合内部的一等公民** | 级跳是结构概念，单独无意义；属 Forest 聚合 |
+| DAG 是否落库 | **不落库，运行时计算** | DAG 是 cascades + edges 的视图，存为缓存而非真值，避免双写不一致 |
+| Forest 是否保存坐标 | **不保存** | 业务诉求；前端用图布局算法重新排布 |
+| 模板版本如何冻结到 Forest | **forest_version 中 inline snapshot** | 不可变快照原则；模板版本变更不影响已保存的 forest 版本 |
+| 表达式 DSL（option/type_option）如何执行 | **AST + 解释器（纯函数）** | 安全性 + 跨语言可移植（前端 TS 预校验 + 后端 Python 正式校验，结果一致） |
+| 模板变更如何通知 forest | **Impact Index + 异步级联 fork** | 不强制立即升级；提示所有者并提供一键迁移 |
+
+### 10.4 数据库设计原则（本章特有）
+
+| 原则 | 落地手段 |
+|------|---------|
+| **核心字段强 schema，扩展字段弱 schema** | 关键 FK / 状态 / 版本号用列；可演进的属性 schema 用 JSON 列 |
+| **快照不可变** | `*_version` 表写入后不允许 UPDATE 业务字段（仅 `archived_at` / 软删） |
+| **content-hash 去重** | template / forest 快照按 SHA256(canonical_json) 去重；同内容多次保存不会爆库 |
+| **平铺优先于嵌套** | Forest 子结构（Cascade / Bundle / Edge / CommandInstance）平铺到独立表；同时 `forest_version.snapshot_json` 冗余存全量 JSON 给前端一次拉取 |
+| **版本号单调** | `(parent_id, version_number)` 唯一约束 + 行级锁 |
+| **软删除而非物理删除** | 用户可见数据带 `deleted_at`；物理删除由 GC 任务做（90 天保留） |
+| **新增字段优先于修改字段** | 字段拆分原则：先拆 JSON column，确认稳定后再升列；`schema_version` 字段贯穿所有快照 |
+
+### 10.5 模块清单（本章新增 16 个；总数 63 → 79）
+
+> §10.6–§10.15 / §10.21 共 16 个模块；其中 §10.21 Tool 子系统重写新增 6 个。
+
+> 归属与第 2.1 表对齐：
+
+| # | 模块 | 层级 | 限界上下文 | 对应原文章节 |
+|---|------|------|-----------|-----------|
+| 12.1 | meta-template | Domain | MetaTemplate（新增 BC） | 新增 |
+| 12.2 | command-template-engine | Domain | Command（重命名 Node） | 替代 §3.1.1 |
+| 12.3 | command-property-evaluator | Domain | Command | 新增（实现 option/type_option DSL） |
+| 12.4 | edge-template | Domain | Edge（新增 BC） | 新增 |
+| 12.5 | cascade-validator | Domain | Graph | 扩展 §3.2.1 |
+| 12.6 | forest-snapshot-builder | Domain | Graph | 扩展 §3.2.2 |
+| 12.7 | template-impact-analyzer | Domain | Graph + Command | 新增 |
+| 12.8 | forest-template-library | Domain | Graph | 替代/补充 §3.1.4 |
+| 12.9 | forest-promotion-workflow | App | Review | 新增（提审为官方模板） |
+| 12.10 | d3a-codegen-target | Integration | Phase2 | 替代 §5.1.5 中 D3A 留白部分 |
+
+---
+
+### 10.6 MetaTemplate 域（新增 BC）
+
+#### 10.6.1 限界上下文与职责
+
+**MetaTemplate** 是整个 D3A 业务的"类型字典"：
+
+1. **EnumType**：命名枚举（`Enum1`, `compareType` 等），含枚举值列表、显示名、可选语义注释
+2. **ValueType**：基础类型（`u8/u16/u32/u64/i8/.../bool/string/bytes`），含 C/C++ 映射、字节宽度、对齐
+3. **CompositeType**：复合类型（联合体、结构体），由 ValueType 或 EnumType 组合
+4. **VariableSlot**：变量槽位定义——`${var}` 占位符背后的元数据（类型、作用域、绑定时机）
+
+CommandTemplate 与 EdgeTemplate 在定义 properties 时通过 `type_ref: { kind, name }` 引用 MetaTemplate，而非内联类型定义。
+
+#### 10.6.2 聚合根模型
+
+```python
+class MetaTemplateStatus(str, Enum):
+    DRAFT = "draft"
+    ACTIVE = "active"
+    DEPRECATED = "deprecated"
+
+@dataclass
+class MetaTemplate:
+    id: str                       # mt_xxxxxxxx
+    name: str
+    display_name: str
+    description: str
+    scope: Literal["global", "private"]
+    owner_id: int | None
+    current_version_id: str
+    status: MetaTemplateStatus
+    deleted_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+    version: int                  # 乐观锁
+
+@dataclass(frozen=True)
+class MetaTemplateVersion:
+    id: str                       # mtv_xxxxxxxx
+    meta_template_id: str
+    version_number: int
+    content_hash: str             # SHA256(canonical_json)
+    enum_types: tuple[EnumTypeDef, ...]
+    value_types: tuple[ValueTypeDef, ...]
+    composite_types: tuple[CompositeTypeDef, ...]
+    variable_slots: tuple[VariableSlotDef, ...]
+    schema_version: int
+    created_by: int
+    created_at: datetime
+    notes: str
+
+@dataclass(frozen=True)
+class EnumTypeDef:
+    name: str                     # "Enum1", "compareType"
+    members: tuple[EnumMember, ...]
+    description: str
+    extensions: Mapping[str, Any]
+
+@dataclass(frozen=True)
+class EnumMember:
+    name: str                     # "D_CMD_1"
+    value: int | str
+    display_name: str
+    description: str
+    deprecated: bool = False
+
+@dataclass(frozen=True)
+class ValueTypeDef:
+    name: str                     # "u32", "f64"
+    primitive: Literal["uint", "int", "float", "bool", "char", "bytes"]
+    bit_width: int | None
+    cpp_mapping: str              # "uint32_t"
+    rust_mapping: str | None
+    extensions: Mapping[str, Any]
+
+@dataclass(frozen=True)
+class CompositeTypeDef:
+    name: str
+    kind: Literal["struct", "union", "array", "bitfield"]
+    fields: tuple[CompositeField, ...]
+    cpp_layout: str               # "packed" | "aligned8"
+    extensions: Mapping[str, Any]
+
+@dataclass(frozen=True)
+class CompositeField:
+    name: str
+    type_ref: TypeRef
+    bit_offset: int | None
+    bit_size: int | None
+
+@dataclass(frozen=True)
+class VariableSlotDef:
+    name: str                     # "var1"
+    type_ref: TypeRef
+    scope: Literal["forest", "dag", "cascade"]
+    binding_phase: Literal["design", "runtime"]
+    description: str
+
+@dataclass(frozen=True)
+class TypeRef:
+    kind: Literal["enum", "value", "composite", "variable"]
+    name: str
+    # 版本不在此处——由引用方（CommandTemplate snapshot）锁定
+```
+
+#### 10.6.3 公开接口
+
+```python
+class MetaTemplateRepository(ABC):
+    async def create(self, mt: MetaTemplate) -> str: ...
+    async def get(self, mt_id: str) -> MetaTemplate | None: ...
+    async def get_version(self, version_id: str) -> MetaTemplateVersion | None: ...
+    async def save_new_version(
+        self, mt_id: str, version: MetaTemplateVersion
+    ) -> MetaTemplateVersion:
+        """同 content_hash 已存在 → 复用；不存在 → 新建（version_number 自增）"""
+    async def list_versions(self, mt_id: str) -> list[MetaTemplateVersion]: ...
+    async def transition(self, mt: MetaTemplate) -> MetaTemplate: ...
+
+class MetaTemplateService:
+    async def create(self, dto, by: int) -> MetaTemplate: ...
+    async def update_draft(self, mt_id: str, dto, by: int) -> MetaTemplate: ...
+    async def publish(self, mt_id: str, by: int) -> MetaTemplate: ...
+    async def deprecate(self, mt_id: str, by: int) -> MetaTemplate: ...
+    async def import_pack(self, json_bytes: bytes, by: int) -> ImportReport: ...
+    async def export_pack(self, mt_id: str, version_number: int | None) -> bytes: ...
+```
+
+#### 10.6.4 状态机
+
+| 状态 | 含义 | 允许转移 |
+|------|------|---------|
+| DRAFT | 草稿 | → ACTIVE（publish）｜→ 删除 |
+| ACTIVE | 已发布，可被引用 | → DEPRECATED |
+| DEPRECATED | 不推荐新用，已引用继续生效 | 终态 |
+
+> ACTIVE 的 MetaTemplate 不允许就地修改；变更必须新建 `MetaTemplateVersion`。这是因为 CommandTemplate 通过 `(meta_template_id, version_number)` 锁定快照，就地修改会破坏不可变性。
+
+#### 10.6.5 反模式
+
+- ❌ 在 CommandTemplate 内联 EnumType 定义（必须通过 `type_ref` 引用 MetaTemplate）
+- ❌ 修改已发布的 MetaTemplateVersion（必须新建版本）
+- ❌ 直接删除 EnumMember（必须先 `deprecated: true`，下个 major 版本再删）
+
+---
+
+### 10.7 CommandTemplate 域（细化 §3.1 Node 域）
+
+#### 10.7.1 限界上下文与职责
+
+**CommandTemplate** 是 D3A 业务的核心积木——一个指令的完整定义：
+
+- 引用一个 MetaTemplateVersion（锁定类型字典快照）
+- 描述指令属性 schema（含 `option`/`type_option`/变量绑定）
+- 标注 `struct_kind`：`main_struct` 或 `action_struct`（决定级跳中的位置）
+- 携带 D3A → C/C++ 的代码生成 hints
+
+约 30 个 D3A 指令最终都是 CommandTemplate 的实例化（而非 30 个独立类）。
+
+#### 10.7.2 聚合根模型
+
+```python
+class CommandStructKind(str, Enum):
+    MAIN = "main_struct"          # 级跳的顶部，每级跳必有 1 个
+    ACTION = "action_struct"      # 级跳的非顶部，每级跳 0..N 个
+
+class CommandTemplateStatus(str, Enum):
+    DRAFT = "draft"
+    ACTIVE = "active"
+    DEPRECATED = "deprecated"
+
+@dataclass
+class CommandTemplate:
+    id: str                       # ct_xxxxxxxx
+    name: str                     # "cmd1", PascalCase
+    display_name: str             # "比较指令"
+    category: str                 # "比较类" / "跳转类"
+    struct_kind: CommandStructKind
+    scope: Literal["global", "private"]
+    owner_id: int | None
+    current_version_id: str
+    status: CommandTemplateStatus
+    deleted_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+    version: int
+
+@dataclass(frozen=True)
+class CommandTemplateVersion:
+    id: str                       # ctv_xxxxxxxx
+    command_template_id: str
+    version_number: int
+    content_hash: str
+    meta_template_version_id: str # 锁定的 MetaTemplate 版本
+    properties: tuple[PropertyDef, ...]
+    codegen_hints: CodegenHints
+    display_hints: DisplayHints
+    schema_version: int
+    created_by: int
+    created_at: datetime
+    notes: str
+
+@dataclass(frozen=True)
+class PropertyDef:
+    """指令的单个属性定义"""
+    name: str                     # "Meta index", "Data1"
+    display_name: str
+    description: str
+    type_ref: TypeRef             # 引用 MetaTemplate 中的类型
+    presence_condition: ExprNode | None        # option（None = 总是存在）
+    type_resolution: TypeResolutionRule | None # type_option（None = type_ref 即终态）
+    allow_variable: bool          # 是否允许 ${var}
+    required: bool                # 在 condition 满足时是否必填
+    default_value: Any | None
+    validation_rules: tuple[ValidationRule, ...]
+    display_order: int            # 抽屉视图中的排序，也用于 DSL 引用合法性
+    extensions: Mapping[str, Any]
+
+@dataclass(frozen=True)
+class TypeResolutionRule:
+    """type_option：根据其他属性的值决定本属性的具体类型"""
+    cases: tuple[TypeResolutionCase, ...]
+    fallback: TypeRef | None
+
+@dataclass(frozen=True)
+class TypeResolutionCase:
+    condition: ExprNode           # "metaIndex === 1"
+    type_ref: TypeRef             # 命中时的实际类型
+
+@dataclass(frozen=True)
+class ValidationRule:
+    kind: Literal["range", "regex", "enum_subset", "custom"]
+    spec: Mapping[str, Any]
+    error_message: str
+
+@dataclass(frozen=True)
+class DisplayHints:
+    icon: str
+    color: str                    # main 与 action 默认配色不同，可被模板覆盖
+    tooltip_template: str         # 悬浮提示模板（含 ${name}/${value} 占位）
+    drawer_layout: Mapping[str, Any]
+```
+
+#### 10.7.3 完整示例：cmd1 指令模板（导入工具或前端编辑器输出）
+
+```json
+{
+  "name": "cmd1",
+  "display_name": "比较指令",
+  "category": "比较类",
+  "struct_kind": "main_struct",
+  "scope": "global",
+  "version": {
+    "meta_template_name": "d3a-chip-v1",
+    "meta_template_version": 3,
+    "schema_version": 1,
+    "properties": [
+      {
+        "name": "MetaIndex",
+        "display_name": "Meta 索引",
+        "description": "比较的 meta 索引",
+        "type_ref": { "kind": "enum", "name": "Enum1" },
+        "presence_condition": null,
+        "type_resolution": null,
+        "allow_variable": false,
+        "required": true,
+        "display_order": 1
+      },
+      {
+        "name": "compareType",
+        "display_name": "比较类型",
+        "type_ref": { "kind": "enum", "name": "compareType" },
+        "presence_condition": null,
+        "required": true,
+        "display_order": 2
+      },
+      {
+        "name": "Data1",
+        "display_name": "数据 1",
+        "type_ref": { "kind": "value", "name": "u32" },
+        "presence_condition": {
+          "kind": "or",
+          "payload": {
+            "left":  { "kind": "binop", "payload": { "op": "==", "left": {"kind":"var","payload":{"name":"compareType"}}, "right": {"kind":"literal","payload":{"value":"D_CMD_1"}} } },
+            "right": { "kind": "binop", "payload": { "op": "==", "left": {"kind":"var","payload":{"name":"compareType"}}, "right": {"kind":"literal","payload":{"value":"D_CMD_2"}} } }
+          }
+        },
+        "type_resolution": {
+          "cases": [
+            {
+              "condition": { "kind": "binop", "payload": { "op": "===", "left": {"kind":"var","payload":{"name":"MetaIndex"}}, "right": {"kind":"literal","payload":{"value":1}} } },
+              "type_ref": { "kind": "value", "name": "u32" }
+            }
+          ],
+          "fallback": { "kind": "value", "name": "u64" }
+        },
+        "allow_variable": true,
+        "required": true,
+        "display_order": 3
+      },
+      {
+        "name": "Mask1",
+        "type_ref": { "kind": "value", "name": "u32" },
+        "presence_condition": {
+          "kind": "binop",
+          "payload": { "op": "==", "left": {"kind":"var","payload":{"name":"compareType"}}, "right": {"kind":"literal","payload":{"value":"D_CMD_1"}} }
+        },
+        "required": true,
+        "display_order": 4
+      }
+    ],
+    "codegen_hints": {
+      "cpp_class_name_template": "Cmd1_${MetaIndex}",
+      "header_includes": ["<cstdint>"],
+      "render_strategy": "template"
+    },
+    "display_hints": {
+      "icon": "compare",
+      "color": "#3B82F6",
+      "tooltip_template": "Cmd1 [Meta=${MetaIndex}, Type=${compareType}]"
+    }
+  }
+}
+```
+
+#### 10.7.4 反模式
+
+- ❌ 在 PropertyDef 中内联 EnumType（应通过 `type_ref`）
+- ❌ 在 `presence_condition` 内引用未在本 CommandTemplate 中先声明的属性（必须按 `display_order` 单向引用）
+- ❌ ACTIVE 状态下就地修改 PropertyDef（必须新建版本）
+- ❌ `allow_variable: true` 但无对应 VariableSlot 定义（DSL 校验会拒绝）
+
+---
+
+### 10.8 EdgeTemplate 域（新增 BC）
+
+#### 10.8.1 限界上下文与职责
+
+**EdgeTemplate** 定义 Forest 中边的可选类型（如 `yes` / `no` / `compose` / `inherit` / `aggregate`），由管理员维护。每条 EdgeInstance 在 Forest 中都引用一个 EdgeTemplate 版本快照。
+
+EdgeTemplate 决定：
+- 边的视觉风格（颜色、线型、箭头）
+- 边的属性 schema（如 `condition_label: string`）
+- 边的语义约束（如 `allow_action_source: bool`）
+
+#### 10.8.2 聚合根模型
+
+```python
+@dataclass
+class EdgeTemplate:
+    id: str                       # et_xxxxxxxx
+    name: str                     # "yes_branch", "compose"
+    display_name: str
+    category: str                 # "branch", "uml", "data_flow"
+    scope: Literal["global", "private"]
+    owner_id: int | None
+    current_version_id: str
+    status: Literal["draft", "active", "deprecated"]
+    deleted_at: datetime | None
+    version: int
+
+@dataclass(frozen=True)
+class EdgeTemplateVersion:
+    id: str
+    edge_template_id: str
+    version_number: int
+    content_hash: str
+    meta_template_version_id: str
+    properties: tuple[PropertyDef, ...]   # 复用 §10.7 的 PropertyDef
+    semantic_constraints: SemanticConstraints
+    display_hints: EdgeDisplayHints
+    schema_version: int
+    created_by: int
+    created_at: datetime
+
+@dataclass(frozen=True)
+class SemanticConstraints:
+    allow_action_source: bool      # 是否允许 source 是 action_struct（默认 True）
+    allow_main_to_main: bool       # 是否允许 main → main（默认 True）
+    target_must_be_main: bool      # 必须为 True（D3A 业务硬约束）
+    allow_self_loop: bool          # 默认 False（DAG 约束）
+
+@dataclass(frozen=True)
+class EdgeDisplayHints:
+    color: str
+    line_style: Literal["solid", "dashed", "dotted"]
+    arrow_style: Literal["arrow", "diamond", "triangle", "open"]
+    label_template: str            # "${condition_label}"
+    icon: str | None
+```
+
+#### 10.8.3 EdgeTemplate 例：yes/no 分支
+
+```json
+{
+  "name": "yes_branch",
+  "display_name": "是分支",
+  "category": "branch",
+  "version": {
+    "schema_version": 1,
+    "properties": [
+      {
+        "name": "label",
+        "type_ref": { "kind": "value", "name": "string" },
+        "default_value": "是",
+        "required": false,
+        "display_order": 1
+      }
+    ],
+    "semantic_constraints": {
+      "allow_action_source": true,
+      "allow_main_to_main": true,
+      "target_must_be_main": true,
+      "allow_self_loop": false
+    },
+    "display_hints": {
+      "color": "#10B981",
+      "line_style": "solid",
+      "arrow_style": "arrow",
+      "label_template": "${label}"
+    }
+  }
+}
+```
+
+#### 10.8.4 反模式
+
+- ❌ 修改 `target_must_be_main` 为 False（破坏 D3A 业务约束）
+- ❌ 在多个 EdgeTemplate 中重复定义同一类型——应按业务领域拆类别（branch / uml / dataflow）
+
+---
+
+### 10.9 Forest 内部数据结构（平铺）
+
+#### 10.9.1 数据结构总图
+
+```
+Forest（聚合根，原 CascadeForest）
+  ├─ ForestVersion（不可变快照，原 GraphVersion）
+  │    snapshot_json: 整个 forest 的扁平 JSON（前端一次拉取，后端冗余存储）
+  │    + 平铺到独立表保证可索引：
+  │       ├─ Cascade            （表 t_cascade，FK forest_version_id）
+  │       ├─ CommandInstance    （表 t_command_instance，FK cascade_id）
+  │       ├─ Bundle             （表 t_bundle，FK forest_version_id）
+  │       ├─ BundleCascadeLink  （表 t_bundle_cascade，M2M）
+  │       └─ EdgeInstance       （表 t_edge_instance，FK forest_version_id）
+  │
+  └─ DAG 不落库（运行时由 dag-compute 模块按 cascades + edges 计算）
+```
+
+> 同一份数据在 `forest_version.snapshot_json` 和子表中都有——前者是"读优化的整体快照"（前端一次性渲染），后者是"写优化的可索引数据"（影响分析、按 instance 检索）。两者由 `forest-snapshot-builder` 在事务内同写，content_hash 保一致性。
+
+#### 10.9.2 实体定义
+
+```python
+@dataclass(frozen=True)
+class Cascade:
+    """级跳：1 个 main_struct + 0..N 个 action_struct 命令实例"""
+    id: str                       # cs_xxxxxxxx，forest 内唯一
+    forest_version_id: str
+    main_command_instance_id: str # 顶部的 main_struct 命令实例
+    action_command_instance_ids: tuple[str, ...]  # 按顺序的 action 列表
+    label: str                    # 用户给级跳起的名字（可选）
+    display_meta: Mapping[str, Any]
+    extensions: Mapping[str, Any]
+
+@dataclass(frozen=True)
+class CommandInstance:
+    """命令实例：在 forest 中实际填值的指令"""
+    id: str                       # ci_xxxxxxxx
+    forest_version_id: str
+    cascade_id: str
+    role: Literal["main", "action"]
+    role_index: int               # main 始终为 0；action 按顺序 0,1,2…
+    
+    # 引用的模板（强制冻结快照，跨 forest_version 不变）
+    command_template_id: str
+    command_template_version_id: str
+    
+    property_values: Mapping[str, PropertyValue]
+    
+    validation_state: Literal["valid", "invalid", "incomplete"]
+    validation_errors: tuple[ValidationIssue, ...]
+    
+    extensions: Mapping[str, Any]
+
+@dataclass(frozen=True)
+class PropertyValue:
+    """命令实例中单个属性的填值"""
+    kind: Literal["literal", "variable_ref", "absent"]
+    literal_value: Any | None
+    variable_name: str | None
+    # absent: 因 presence_condition 不满足而不存在
+
+@dataclass(frozen=True)
+class Bundle:
+    """Bundle：用户框选的级跳分组（代码生成 → 1 对象）"""
+    id: str                       # bd_xxxxxxxx
+    forest_version_id: str
+    name: str
+    description: str
+    cascade_ids: tuple[str, ...]  # 不允许跨 bundle 重叠
+    codegen_class_name: str
+    extensions: Mapping[str, Any]
+
+@dataclass(frozen=True)
+class EdgeInstance:
+    """边实例"""
+    id: str                       # ei_xxxxxxxx
+    forest_version_id: str
+    edge_template_id: str
+    edge_template_version_id: str
+    
+    source_cascade_id: str
+    source_endpoint: SourceEndpoint
+    
+    target_cascade_id: str
+    # target 强制为 target_cascade.main_command_instance_id（业务约束）
+    
+    property_values: Mapping[str, PropertyValue]
+    label: str                    # 渲染后的边标签（缓存）
+    extensions: Mapping[str, Any]
+
+@dataclass(frozen=True)
+class SourceEndpoint:
+    role: Literal["main", "action"]
+    role_index: int               # main 为 0；action 为对应序号
+```
+
+#### 10.9.3 不变式（DB 与应用层双重强制）
+
+| # | 不变式 | 强制位置 |
+|---|------|---------|
+| 1 | 每个 Cascade 必有且仅有 1 个 main_struct CommandInstance | DB 触发器 + 应用校验 |
+| 2 | Cascade 中 main 角色的 CommandInstance.role_index = 0 | DB 触发器 |
+| 3 | Cascade 中 action 角色的 role_index 在 [0, N-1] 连续不重复 | 应用校验（保存时） |
+| 4 | EdgeInstance.target 必指向 target_cascade.main 角色的 CommandInstance | DB 触发器 |
+| 5 | EdgeInstance.source_cascade_id ≠ target_cascade_id（无自环） | DB CHECK |
+| 6 | Forest 的 cascade + edge 必须构成 DAG（无环） | 保存事务内由 dag-compute 校验 |
+| 7 | Bundle.cascade_ids 不允许重叠 | DB UNIQUE(cascade_id) on link 表 |
+| 8 | CommandInstance 引用的模板版本必须 ACTIVE 或被同 forest_version 锁定 | 应用校验 |
+| 9 | PropertyValue.kind = variable_ref 时，模板对应 PropertyDef.allow_variable = true | command-property-evaluator 校验 |
+| 10 | 当某 PropertyDef.presence_condition 不满足时，该 property 必须 absent | command-property-evaluator 校验 |
+
+#### 10.9.4 完整 forest_version.snapshot_json 结构（前端渲染契约）
+
+```json
+{
+  "schema_version": 1,
+  "forest_id": "fr_xxx",
+  "version_number": 7,
+  "snapshot_hash": "sha256:...",
+  "metadata": {
+    "name": "我的 D3A 工作流",
+    "description": "..."
+  },
+  "cascades": [
+    {
+      "id": "cs_001",
+      "label": "比较与跳转",
+      "main_command_instance_id": "ci_001",
+      "action_command_instance_ids": ["ci_002", "ci_003"]
+    }
+  ],
+  "command_instances": [
+    {
+      "id": "ci_001",
+      "cascade_id": "cs_001",
+      "role": "main",
+      "role_index": 0,
+      "command_template_id": "ct_cmd1",
+      "command_template_version_id": "ctv_cmd1_v3",
+      "command_template_snapshot": {
+        "name": "cmd1",
+        "display_name": "比较指令",
+        "struct_kind": "main_struct",
+        "properties": [ /* 模板的完整 property schema 内联 */ ],
+        "display_hints": { "color": "#3B82F6", "icon": "compare" }
+      },
+      "property_values": {
+        "MetaIndex": { "kind": "literal", "literal_value": 1 },
+        "compareType": { "kind": "literal", "literal_value": "D_CMD_1" },
+        "Data1": { "kind": "variable_ref", "variable_name": "var1" },
+        "Mask1": { "kind": "literal", "literal_value": "0xFF" }
+      },
+      "validation_state": "valid",
+      "validation_errors": []
+    }
+  ],
+  "bundles": [
+    {
+      "id": "bd_001",
+      "name": "InitObject",
+      "codegen_class_name": "InitObject",
+      "cascade_ids": ["cs_001", "cs_002"]
+    }
+  ],
+  "edges": [
+    {
+      "id": "ei_001",
+      "edge_template_id": "et_yes",
+      "edge_template_version_id": "etv_yes_v1",
+      "edge_template_snapshot": {
+        "name": "yes_branch",
+        "display_hints": { "color": "#10B981", "line_style": "solid" }
+      },
+      "source": { "cascade_id": "cs_001", "role": "action", "role_index": 0 },
+      "target": { "cascade_id": "cs_002" },
+      "property_values": { "label": { "kind": "literal", "literal_value": "是" } },
+      "label": "是"
+    }
+  ],
+  "variable_bindings": {
+    "var1": { "type_ref": { "kind": "value", "name": "u32" }, "value": null, "scope": "forest" }
+  },
+  "computed": {
+    "dags": [
+      {
+        "dag_index": 0,
+        "root_cascade_id": "cs_001",
+        "cascade_ids": ["cs_001", "cs_002", "cs_003"],
+        "edge_ids": ["ei_001", "ei_002"],
+        "topo_order": ["cs_001", "cs_002", "cs_003"]
+      }
+    ]
+  }
+}
+```
+
+> `computed` 字段是只读冗余，由 dag-compute 在保存时一次性算出并写入。前端不需要重算；后端在加载时直接信任（hash 校验失败可触发重算）。
+
+---
+
+### 10.10 表达式 DSL（option / type_option / 变量绑定）
+
+#### 10.10.1 设计目标
+
+`option`、`type_option` 等表达式必须满足：
+
+1. **图灵不完备 + 沙箱安全**——不能调函数、不能 IO、不能循环；只能基于已填属性值和常量做布尔/比较运算
+2. **跨语言可执行**——前端（TypeScript）即时校验隐藏字段，后端（Python）在 finalize 前正式校验，结果必须一致
+3. **可序列化**——AST 形式保存到 DB，方便升级/迁移
+4. **可解释错误**——校验失败时定位到表达式具体节点
+
+#### 10.10.2 BNF（简化）
+
+```bnf
+expr      ::= or_expr
+or_expr   ::= and_expr ( "||" and_expr )*
+and_expr  ::= cmp_expr ( "&&" cmp_expr )*
+cmp_expr  ::= unary_expr ( CMP_OP unary_expr )?
+unary_expr ::= "!" unary_expr | primary
+primary   ::= literal | var_ref | "(" expr ")" | in_expr
+literal   ::= NUMBER | STRING | "true" | "false" | "null"
+var_ref   ::= IDENT                       # 引用同一 CommandTemplate 内的其它属性
+in_expr   ::= var_ref "in" "[" literal_list "]"
+CMP_OP    ::= "==" | "!=" | "===" | "!==" | "<" | "<=" | ">" | ">="
+```
+
+#### 10.10.3 AST 节点
+
+| kind | payload 字段 | 含义 |
+|------|-------------|------|
+| `literal` | `value: any` | 字面量 |
+| `var` | `name: string` | 引用其他属性 |
+| `binop` | `op, left, right` | 二元运算 |
+| `unop` | `op, operand` | 一元运算 |
+| `in` | `var, members` | 成员判断 |
+| `and` | `left, right` | 逻辑与 |
+| `or` | `left, right` | 逻辑或 |
+
+#### 10.10.4 求值器接口
+
+```python
+class ExprEvaluator:
+    def evaluate(
+        self,
+        expr: ExprNode,
+        context: PropertyValueContext,
+    ) -> bool | int | str:
+        """
+        纯函数；不抛业务异常（除非语法错误）。
+        遇到未填属性 → 返回 False（option）/ 不命中（type_option）
+        """
+
+class PropertyValueContext:
+    values: Mapping[str, Any]
+    def get(self, name: str) -> Any | UNDEFINED: ...
+```
+
+#### 10.10.5 静态校验
+
+- **引用合法性**：`var_ref` 只能引用本 CommandTemplate 中 `display_order` 严格小于自身的属性（防止循环依赖）
+- **类型一致性**：`==` 两侧必须类型兼容（enum vs enum，数值 vs 数值）
+- **literal 合法性**：枚举字面量必须是 EnumType.members 中的一员
+
+由 `command-property-evaluator` 模块在 CommandTemplateVersion 保存时一次性静态校验。
+
+#### 10.10.6 前端预校验契约
+
+后端暴露表达式工具端点（仅用于编辑器实时反馈）：
+
+```
+POST /api/v1/expr/eval
+Body: { expr: ExprNode, context: { var: value, ... } }
+Resp: { result: any, evaluated: true } | { error: string, evaluated: false }
+```
+
+前端可调此接口在用户编辑时实时显隐 property 字段，与后端最终校验逻辑保证一致。
+
+---
+
+### 10.11 完整数据库 Schema
+
+> 本节给出本章新增 12 张表 + 修订 3 张原表的完整 DDL；遵循 §1.5 依赖规则与 §8.0.1 outbox 一致性约束。
+
+#### 10.11.1 MetaTemplate 表
+
+```sql
+CREATE TABLE t_meta_template (
+    id              VARCHAR(32)  PRIMARY KEY,        -- mt_xxxxxxxx
+    name            VARCHAR(128) NOT NULL,
+    display_name    VARCHAR(255) NOT NULL,
+    description     TEXT         NOT NULL,
+    scope           ENUM('global', 'private') NOT NULL,
+    owner_id        BIGINT       NULL,
+    current_version_id VARCHAR(32) NULL,
+    status          ENUM('draft','active','deprecated') NOT NULL DEFAULT 'draft',
+    deleted_at      DATETIME(6)  NULL,
+    created_at      DATETIME(6)  NOT NULL,
+    updated_at      DATETIME(6)  NOT NULL,
+    version         INT          NOT NULL DEFAULT 1,
+    
+    UNIQUE KEY uk_mt_name_scope (name, scope, owner_id, deleted_at),
+    INDEX idx_mt_owner (owner_id, status),
+    INDEX idx_mt_status (status, updated_at)
+);
+
+CREATE TABLE t_meta_template_version (
+    id                VARCHAR(32)  PRIMARY KEY,      -- mtv_xxxxxxxx
+    meta_template_id  VARCHAR(32)  NOT NULL,
+    version_number    INT          NOT NULL,
+    content_hash      CHAR(64)     NOT NULL,
+    schema_version    INT          NOT NULL DEFAULT 1,
+    
+    -- 类型字典 JSON，结构示例：
+    -- { "enum_types":[…], "value_types":[…], "composite_types":[…], "variable_slots":[…] }
+    type_dictionary   JSON         NOT NULL,
+    
+    notes             TEXT         NULL,
+    created_by        BIGINT       NOT NULL,
+    created_at        DATETIME(6)  NOT NULL,
+    
+    CONSTRAINT fk_mtv_mt FOREIGN KEY (meta_template_id) REFERENCES t_meta_template(id),
+    UNIQUE KEY uk_mtv_dedup (meta_template_id, content_hash),
+    UNIQUE KEY uk_mtv_version (meta_template_id, version_number),
+    INDEX idx_mtv_created (created_at)
+);
+```
+
+#### 10.11.2 CommandTemplate 表
+
+```sql
+CREATE TABLE t_command_template (
+    id              VARCHAR(32)  PRIMARY KEY,        -- ct_xxxxxxxx
+    name            VARCHAR(128) NOT NULL,
+    display_name    VARCHAR(255) NOT NULL,
+    category        VARCHAR(64)  NOT NULL,
+    struct_kind     ENUM('main_struct','action_struct') NOT NULL,
+    scope           ENUM('global','private') NOT NULL,
+    owner_id        BIGINT       NULL,
+    current_version_id VARCHAR(32) NULL,
+    status          ENUM('draft','active','deprecated') NOT NULL DEFAULT 'draft',
+    deleted_at      DATETIME(6)  NULL,
+    created_at      DATETIME(6)  NOT NULL,
+    updated_at      DATETIME(6)  NOT NULL,
+    version         INT          NOT NULL DEFAULT 1,
+    
+    UNIQUE KEY uk_ct_name_scope (name, scope, owner_id, deleted_at),
+    INDEX idx_ct_owner (owner_id, status),
+    INDEX idx_ct_struct_kind (struct_kind, status),
+    INDEX idx_ct_category (category, status)
+);
+
+CREATE TABLE t_command_template_version (
+    id                       VARCHAR(32) PRIMARY KEY,  -- ctv_xxxxxxxx
+    command_template_id      VARCHAR(32) NOT NULL,
+    version_number           INT         NOT NULL,
+    content_hash             CHAR(64)    NOT NULL,
+    meta_template_version_id VARCHAR(32) NOT NULL,
+    schema_version           INT         NOT NULL DEFAULT 1,
+    
+    properties_schema  JSON NOT NULL,    -- [PropertyDef…] 序列化
+    codegen_hints      JSON NOT NULL,
+    display_hints      JSON NOT NULL,
+    
+    notes              TEXT       NULL,
+    created_by         BIGINT     NOT NULL,
+    created_at         DATETIME(6) NOT NULL,
+    
+    CONSTRAINT fk_ctv_ct FOREIGN KEY (command_template_id) REFERENCES t_command_template(id),
+    CONSTRAINT fk_ctv_mtv FOREIGN KEY (meta_template_version_id) REFERENCES t_meta_template_version(id),
+    UNIQUE KEY uk_ctv_dedup (command_template_id, content_hash),
+    UNIQUE KEY uk_ctv_version (command_template_id, version_number),
+    INDEX idx_ctv_mtv (meta_template_version_id)
+);
+```
+
+#### 10.11.3 EdgeTemplate 表
+
+```sql
+CREATE TABLE t_edge_template (
+    id              VARCHAR(32)  PRIMARY KEY,        -- et_xxxxxxxx
+    name            VARCHAR(128) NOT NULL,
+    display_name    VARCHAR(255) NOT NULL,
+    category        VARCHAR(64)  NOT NULL,
+    scope           ENUM('global','private') NOT NULL,
+    owner_id        BIGINT       NULL,
+    current_version_id VARCHAR(32) NULL,
+    status          ENUM('draft','active','deprecated') NOT NULL DEFAULT 'draft',
+    deleted_at      DATETIME(6)  NULL,
+    created_at      DATETIME(6)  NOT NULL,
+    updated_at      DATETIME(6)  NOT NULL,
+    version         INT          NOT NULL DEFAULT 1,
+    
+    UNIQUE KEY uk_et_name_scope (name, scope, owner_id, deleted_at),
+    INDEX idx_et_category (category, status)
+);
+
+CREATE TABLE t_edge_template_version (
+    id                       VARCHAR(32) PRIMARY KEY,  -- etv_xxxxxxxx
+    edge_template_id         VARCHAR(32) NOT NULL,
+    version_number           INT         NOT NULL,
+    content_hash             CHAR(64)    NOT NULL,
+    meta_template_version_id VARCHAR(32) NOT NULL,
+    schema_version           INT         NOT NULL DEFAULT 1,
+    
+    properties_schema     JSON NOT NULL,
+    semantic_constraints  JSON NOT NULL,
+    display_hints         JSON NOT NULL,
+    
+    notes        TEXT       NULL,
+    created_by   BIGINT     NOT NULL,
+    created_at   DATETIME(6) NOT NULL,
+    
+    CONSTRAINT fk_etv_et FOREIGN KEY (edge_template_id) REFERENCES t_edge_template(id),
+    CONSTRAINT fk_etv_mtv FOREIGN KEY (meta_template_version_id) REFERENCES t_meta_template_version(id),
+    UNIQUE KEY uk_etv_dedup (edge_template_id, content_hash),
+    UNIQUE KEY uk_etv_version (edge_template_id, version_number)
+);
+```
+
+#### 10.11.4 Forest 与 ForestVersion 表（替换原 §3.2.2 中 `t_cascade_graph` / `t_graph_version`）
+
+> 在 §3.2.2 中已有 `t_cascade_graph` / `t_graph_version`；本节以业务命名重定义并增加平铺子表。原文档表名仍可作为别名保留，迁移时通过 view 兼容。
+
+```sql
+CREATE TABLE t_forest (
+    id              VARCHAR(32)  PRIMARY KEY,         -- fr_xxxxxxxx
+    name            VARCHAR(255) NOT NULL,
+    description     TEXT         NULL,
+    owner_id        BIGINT       NOT NULL,
+    scope           ENUM('private','official','official_candidate') NOT NULL DEFAULT 'private',
+    category        VARCHAR(64)  NULL,                -- 官方分类
+    current_version_id VARCHAR(32) NULL,
+    status          ENUM('active','archived') NOT NULL DEFAULT 'active',
+    deleted_at      DATETIME(6)  NULL,
+    created_at      DATETIME(6)  NOT NULL,
+    updated_at      DATETIME(6)  NOT NULL,
+    version         INT          NOT NULL DEFAULT 1,
+    
+    INDEX idx_fr_owner (owner_id, status),
+    INDEX idx_fr_scope_category (scope, category, status),
+    INDEX idx_fr_updated (updated_at)
+);
+
+CREATE TABLE t_forest_version (
+    id                VARCHAR(32) PRIMARY KEY,        -- frv_xxxxxxxx
+    forest_id         VARCHAR(32) NOT NULL,
+    version_number    INT         NOT NULL,
+    snapshot_hash     CHAR(64)    NOT NULL,
+    schema_version    INT         NOT NULL DEFAULT 1,
+    
+    -- 整个 forest 的完整 JSON（前端一次拉取的契约形式；与平铺子表内容等价）
+    snapshot_json     LONGTEXT    NOT NULL,
+    
+    -- §7.8 GraphVersion 状态机：DRAFT/SAVED/PHASE1_PASSED/FULLY_VALIDATED/ARCHIVED
+    state             ENUM('draft','saved','phase1_passed','fully_validated','archived') NOT NULL,
+    validated_at      DATETIME(6) NULL,
+    
+    -- 影响传播：本版本基于哪些模板版本快照（用于级联检测）
+    referenced_command_template_versions JSON NOT NULL,  -- ["ctv_xxx", ...]
+    referenced_edge_template_versions    JSON NOT NULL,
+    referenced_meta_template_versions    JSON NOT NULL,
+    
+    -- 当本版本由 fork-from-changeset / 影响升级 fork 出的，这里指向源
+    forked_from_version_id  VARCHAR(32) NULL,
+    fork_reason             ENUM('user_save','changeset_apply','impact_migration','promotion','manual_fork') NOT NULL DEFAULT 'user_save',
+    
+    created_by        BIGINT      NOT NULL,
+    created_at        DATETIME(6) NOT NULL,
+    
+    CONSTRAINT fk_frv_forest FOREIGN KEY (forest_id) REFERENCES t_forest(id),
+    UNIQUE KEY uk_frv_version (forest_id, version_number),
+    INDEX idx_frv_state (state, created_at),
+    INDEX idx_frv_forked_from (forked_from_version_id)
+);
+```
+
+#### 10.11.5 Forest 内部平铺子表
+
+```sql
+-- 级跳
+CREATE TABLE t_cascade (
+    id                          VARCHAR(32) PRIMARY KEY,  -- cs_xxxxxxxx
+    forest_version_id           VARCHAR(32) NOT NULL,
+    main_command_instance_id    VARCHAR(32) NOT NULL,
+    label                       VARCHAR(255) NULL,
+    display_meta                JSON         NULL,
+    extensions                  JSON         NULL,
+    created_at                  DATETIME(6)  NOT NULL,
+    
+    CONSTRAINT fk_cs_frv FOREIGN KEY (forest_version_id) REFERENCES t_forest_version(id),
+    -- main_command_instance_id 的 FK 因循环引用不在此处建，由 INSERT 顺序与应用层保证
+    INDEX idx_cs_frv (forest_version_id)
+);
+
+-- 命令实例
+CREATE TABLE t_command_instance (
+    id                            VARCHAR(32) PRIMARY KEY,  -- ci_xxxxxxxx
+    forest_version_id             VARCHAR(32) NOT NULL,
+    cascade_id                    VARCHAR(32) NOT NULL,
+    role                          ENUM('main','action') NOT NULL,
+    role_index                    INT         NOT NULL,
+    
+    command_template_id           VARCHAR(32) NOT NULL,
+    command_template_version_id   VARCHAR(32) NOT NULL,
+    
+    property_values               JSON NOT NULL,    -- {prop_name: PropertyValue, ...}
+    validation_state              ENUM('valid','invalid','incomplete') NOT NULL DEFAULT 'incomplete',
+    validation_errors             JSON NULL,
+    extensions                    JSON NULL,
+    created_at                    DATETIME(6) NOT NULL,
+    
+    CONSTRAINT fk_ci_frv FOREIGN KEY (forest_version_id) REFERENCES t_forest_version(id),
+    CONSTRAINT fk_ci_cs  FOREIGN KEY (cascade_id) REFERENCES t_cascade(id) ON DELETE CASCADE,
+    CONSTRAINT fk_ci_ctv FOREIGN KEY (command_template_version_id) REFERENCES t_command_template_version(id),
+    
+    UNIQUE KEY uk_ci_role (cascade_id, role, role_index),
+    INDEX idx_ci_frv (forest_version_id),
+    INDEX idx_ci_ctv (command_template_version_id)
+);
+
+-- 触发器：保证每个级跳恰有 1 个 main 角色 CommandInstance
+DELIMITER //
+CREATE TRIGGER trg_ci_main_singleton BEFORE INSERT ON t_command_instance
+FOR EACH ROW BEGIN
+    IF NEW.role = 'main' THEN
+        IF (SELECT COUNT(*) FROM t_command_instance
+            WHERE cascade_id = NEW.cascade_id AND role = 'main') > 0 THEN
+            SIGNAL SQLSTATE '45000'
+                SET MESSAGE_TEXT = 'Cascade already has a main_struct CommandInstance';
+        END IF;
+        IF NEW.role_index <> 0 THEN
+            SIGNAL SQLSTATE '45000'
+                SET MESSAGE_TEXT = 'main_struct CommandInstance must have role_index=0';
+        END IF;
+    END IF;
+END//
+DELIMITER ;
+
+-- Bundle
+CREATE TABLE t_bundle (
+    id                  VARCHAR(32) PRIMARY KEY,  -- bd_xxxxxxxx
+    forest_version_id   VARCHAR(32) NOT NULL,
+    name                VARCHAR(128) NOT NULL,
+    description         TEXT NULL,
+    codegen_class_name  VARCHAR(128) NOT NULL,
+    extensions          JSON NULL,
+    created_at          DATETIME(6) NOT NULL,
+    
+    CONSTRAINT fk_bd_frv FOREIGN KEY (forest_version_id) REFERENCES t_forest_version(id),
+    INDEX idx_bd_frv (forest_version_id),
+    UNIQUE KEY uk_bd_name (forest_version_id, name)
+);
+
+-- Bundle ↔ Cascade（一个级跳最多在一个 Bundle 里）
+CREATE TABLE t_bundle_cascade (
+    bundle_id   VARCHAR(32) NOT NULL,
+    cascade_id  VARCHAR(32) NOT NULL,
+    seq         INT         NOT NULL,    -- 在 bundle 内的顺序（用于代码生成）
+    
+    PRIMARY KEY (bundle_id, cascade_id),
+    UNIQUE KEY uk_bc_cascade (cascade_id),
+    CONSTRAINT fk_bc_bd FOREIGN KEY (bundle_id) REFERENCES t_bundle(id) ON DELETE CASCADE,
+    CONSTRAINT fk_bc_cs FOREIGN KEY (cascade_id) REFERENCES t_cascade(id) ON DELETE CASCADE
+);
+
+-- Edge 实例
+CREATE TABLE t_edge_instance (
+    id                          VARCHAR(32) PRIMARY KEY,  -- ei_xxxxxxxx
+    forest_version_id           VARCHAR(32) NOT NULL,
+    edge_template_id            VARCHAR(32) NOT NULL,
+    edge_template_version_id    VARCHAR(32) NOT NULL,
+    
+    source_cascade_id           VARCHAR(32) NOT NULL,
+    source_role                 ENUM('main','action') NOT NULL,
+    source_role_index           INT         NOT NULL,
+    
+    target_cascade_id           VARCHAR(32) NOT NULL,
+    -- target 隐含为 target_cascade.main_command_instance（由触发器强制）
+    
+    property_values             JSON NOT NULL,
+    label                       VARCHAR(255) NULL,
+    extensions                  JSON NULL,
+    created_at                  DATETIME(6) NOT NULL,
+    
+    CONSTRAINT fk_ei_frv FOREIGN KEY (forest_version_id) REFERENCES t_forest_version(id),
+    CONSTRAINT fk_ei_etv FOREIGN KEY (edge_template_version_id) REFERENCES t_edge_template_version(id),
+    CONSTRAINT fk_ei_src FOREIGN KEY (source_cascade_id) REFERENCES t_cascade(id),
+    CONSTRAINT fk_ei_tgt FOREIGN KEY (target_cascade_id) REFERENCES t_cascade(id),
+    
+    -- 防自环（DAG 校验在应用层做）
+    CONSTRAINT ck_ei_no_self_loop CHECK (source_cascade_id <> target_cascade_id),
+    
+    INDEX idx_ei_frv (forest_version_id),
+    INDEX idx_ei_src (source_cascade_id),
+    INDEX idx_ei_tgt (target_cascade_id)
+);
+
+-- 变量绑定（forest 级别变量槽位的实际值）
+CREATE TABLE t_forest_variable_binding (
+    forest_version_id   VARCHAR(32)  NOT NULL,
+    variable_name       VARCHAR(128) NOT NULL,
+    type_ref            JSON         NOT NULL,
+    bound_value         JSON         NULL,      -- null = 设计时未填，运行时绑定
+    scope               ENUM('forest','dag','cascade') NOT NULL,
+    description         TEXT NULL,
+    
+    PRIMARY KEY (forest_version_id, variable_name),
+    CONSTRAINT fk_fvb_frv FOREIGN KEY (forest_version_id) REFERENCES t_forest_version(id) ON DELETE CASCADE
+);
+```
+
+#### 10.11.6 模板影响索引（用于 §10.12 影响分析）
+
+```sql
+-- 反向索引：当 CommandTemplate / EdgeTemplate / MetaTemplate 升级时，
+-- 通过本表快速查到所有受影响的 ForestVersion
+CREATE TABLE t_template_usage_index (
+    id                    BIGINT      AUTO_INCREMENT PRIMARY KEY,
+    template_kind         ENUM('command','edge','meta') NOT NULL,
+    template_id           VARCHAR(32) NOT NULL,
+    template_version_id   VARCHAR(32) NOT NULL,
+    forest_id             VARCHAR(32) NOT NULL,
+    forest_version_id     VARCHAR(32) NOT NULL,
+    usage_count           INT         NOT NULL,
+    indexed_at            DATETIME(6) NOT NULL,
+    
+    UNIQUE KEY uk_tui (template_kind, template_id, template_version_id, forest_version_id),
+    INDEX idx_tui_template (template_kind, template_id, template_version_id),
+    INDEX idx_tui_forest (forest_id, forest_version_id)
+);
+```
+
+#### 10.11.7 Forest 提审与官方化流程表
+
+```sql
+CREATE TABLE t_forest_promotion (
+    id                    VARCHAR(32) PRIMARY KEY,  -- frp_xxxxxxxx
+    forest_id             VARCHAR(32) NOT NULL,
+    forest_version_id     VARCHAR(32) NOT NULL,
+    proposed_by           BIGINT      NOT NULL,
+    proposed_category     VARCHAR(64) NULL,
+    proposed_name         VARCHAR(255) NULL,
+    description           TEXT NULL,
+    
+    status                ENUM('open','approved','rejected','withdrawn') NOT NULL DEFAULT 'open',
+    reviewer_id           BIGINT      NULL,
+    review_summary        TEXT        NULL,
+    closed_at             DATETIME(6) NULL,
+    
+    -- approved 时落到的官方 forest（可能新建一个 official forest，也可能更新已有官方版本）
+    official_forest_id    VARCHAR(32) NULL,
+    
+    submitted_at          DATETIME(6) NOT NULL,
+    
+    CONSTRAINT fk_frp_fr FOREIGN KEY (forest_id) REFERENCES t_forest(id),
+    CONSTRAINT fk_frp_frv FOREIGN KEY (forest_version_id) REFERENCES t_forest_version(id),
+    CONSTRAINT fk_frp_off FOREIGN KEY (official_forest_id) REFERENCES t_forest(id),
+    INDEX idx_frp_status (status, submitted_at),
+    -- 同 ForestVersion 不能并发多次提审：partial unique（MySQL 用应用层 + 唯一过滤索引模拟）
+    UNIQUE KEY uk_frp_version_open (forest_version_id, status)
+);
+```
+
+---
+
+### 10.12 模板版本变更与影响传播
+
+#### 10.12.1 业务诉求
+
+> "新芯片到了之后 command 会变 → 改指令影响什么 → 系统自动复制影响的多个森林快照，并且告诉影响到的森林"
+
+两类传播：
+
+| 类型 | 触发 | 传播路径 |
+|------|------|---------|
+| **指令变更影响森林** | CommandTemplate 发布新版本 | 找出引用旧版本的 ForestVersion → 通知所有者 → 提供一键 fork 升级 |
+| **元模板变更影响指令** | MetaTemplate 发布新版本 | 找出引用旧版本的 CommandTemplateVersion → 提示作者升级（可能涉及 schema 不兼容） |
+
+#### 10.12.2 模块：`template-impact-analyzer`
+
+```python
+@dataclass(frozen=True)
+class ImpactReport:
+    template_kind: Literal["command", "edge", "meta"]
+    template_id: str
+    old_version_id: str
+    new_version_id: str
+    
+    affected_forests: tuple[AffectedForest, ...]
+    affected_command_templates: tuple[AffectedCommandTemplate, ...]
+    
+    breaking_changes: tuple[BreakingChange, ...]
+    auto_migratable: bool
+    
+    analyzed_at: datetime
+
+@dataclass(frozen=True)
+class AffectedForest:
+    forest_id: str
+    forest_version_id: str
+    owner_id: int
+    usage_count: int
+    incompatible_instances: tuple[str, ...]
+
+@dataclass(frozen=True)
+class BreakingChange:
+    kind: Literal[
+        "property_removed", "property_required_added",
+        "property_type_changed", "enum_value_removed",
+        "enum_value_renamed", "constraint_tightened"
+    ]
+    location: str
+    description: str
+    auto_fix_available: bool
+    auto_fix_suggestion: dict | None
+
+class TemplateImpactAnalyzer:
+    """纯函数式分析器；无副作用"""
+    
+    async def analyze_command_template_upgrade(
+        self,
+        old_version: CommandTemplateVersion,
+        new_version: CommandTemplateVersion,
+    ) -> ImpactReport: ...
+    
+    async def analyze_meta_template_upgrade(
+        self,
+        old_version: MetaTemplateVersion,
+        new_version: MetaTemplateVersion,
+    ) -> ImpactReport: ...
+    
+    async def list_affected_forests(
+        self,
+        template_kind: str,
+        template_version_id: str,
+    ) -> list[AffectedForest]:
+        """走 t_template_usage_index 反查"""
+```
+
+#### 10.12.3 升级 saga（pipeline-orchestrator 编排，复用 §6.1.5 承载）
+
+新模板发布时**不强制升级**——用户可继续使用旧版本：
+
+```
+CommandTemplate vN → vN+1 发布
+  ↓ outbox: CommandTemplateVersionPublished
+  ↓ TemplateImpactAnalyzer 异步分析
+  ↓ 持久化 ImpactReport
+  ↓ 通知 forest 所有者站内信 / 邮件
+  ↓ 提供两种动作：
+     ├─ "保持不变"：旧模板版本继续生效（DEPRECATED 后仍可读）
+     └─ "一键升级"：触发 ImpactMigrationSaga
+          ├─ saga step1：fork 新 ForestVersion
+          │    复制旧 ForestVersion 的所有 cascade/instance
+          │    将 incompatible_instances 替换为 vN+1
+          │    auto_fix_suggestion 中可自动填的部分自动填
+          │    state = DRAFT，fork_reason = impact_migration
+          ├─ saga step2：触发 ValidationRun（验证新版本）
+          └─ saga step3：通知所有者人工 review 不能自动迁移项
+```
+
+#### 10.12.4 兼容性规则
+
+| 变更类型 | 是否破坏性 | 处理 |
+|---------|-----------|------|
+| 添加可选 PropertyDef（required=false） | 否 | 自动迁移：新属性留默认值 |
+| 添加 required PropertyDef（有默认值） | 否 | 自动迁移：填默认值 |
+| 添加 required PropertyDef（无默认值） | **是** | 标记 incompatible，需人工补值 |
+| 删除 PropertyDef | **是** | 标记，丢弃旧值（保留到 changelog） |
+| PropertyDef.type 变更（兼容子集） | 否 | 自动迁移 |
+| PropertyDef.type 变更（不兼容） | **是** | 标记，人工修复 |
+| EnumType.member 添加 | 否 | 自动迁移 |
+| EnumType.member 删除 | **是** | 用到该 member 的 instance 标记 |
+| EnumType.member 重命名 | 视情况 | 提供 rename map → 自动迁移；否则破坏 |
+| presence_condition 修改 | 视情况 | 静态求值能确定的自动迁移；否则标记 |
+
+#### 10.12.5 索引维护策略
+
+`t_template_usage_index` 在以下时机回填：
+
+```
+A. 实时维护（写穿透）：
+   ForestVersion 保存时（事务内）：
+     INSERT t_template_usage_index 各引用模板的版本
+
+B. 异步重建（保险）：
+   每天凌晨 Cron（leader 选举单例，§8.4）：
+     从 t_command_instance / t_edge_instance 重建 t_template_usage_index
+     与实时维护结果做 diff，告警差异
+```
+
+---
+
+### 10.13 官方模板库与社区贡献
+
+#### 10.13.1 业务诉求
+
+> "用户的私有 Forest 中觉得比较好的，可以提供给管理人员审核 → 作为官方资产，类似 ComfyUI 上面有各种分类的官方工作流。"
+
+#### 10.13.2 概念
+
+| 概念 | 含义 | 表与字段 |
+|------|------|---------|
+| **私有 Forest** | 普通用户私有 | `t_forest.scope = 'private'`, `owner_id = user_id` |
+| **官方 Forest** | 由管理员维护 / 社区提审而来 | `t_forest.scope = 'official'` |
+| **官方候选** | 用户提审中、未发布 | `t_forest.scope = 'official_candidate'` |
+| **提审单（ForestPromotion）** | 用户发起的提审请求 | `t_forest_promotion` |
+| **类目（category）** | 官方模板的分类 | `t_forest.category` |
+
+#### 10.13.3 模块：`forest-template-library`
+
+```python
+class ForestLibraryService:
+    async def list_official(
+        self,
+        category: str | None,
+        page: PaginationParams,
+        viewer_id: int,
+    ) -> PagedResponse[Forest]: ...
+    
+    async def search_official(
+        self,
+        query: str,
+        category: str | None,
+        viewer_id: int,
+    ) -> list[Forest]: ...
+    
+    async def clone_official_to_private(
+        self,
+        official_forest_id: str,
+        official_version_id: str,
+        owner_id: int,
+        new_name: str,
+    ) -> Forest:
+        """加载到用户画布：fork 一份到私有空间，与官方版本断开关联"""
+```
+
+#### 10.13.4 模块：`forest-promotion-workflow`
+
+```python
+class ForestPromotionService:
+    async def submit_promotion(
+        self,
+        forest_id: str,
+        forest_version_id: str,
+        proposed_category: str,
+        proposed_name: str,
+        description: str,
+        proposed_by: int,
+    ) -> ForestPromotion:
+        """事务：创建 ForestPromotion(open) + outbox(ForestPromotionSubmitted)"""
+    
+    async def review_approve(
+        self,
+        promotion_id: str,
+        reviewer_id: int,
+        summary: str,
+        target_official_forest_id: str | None,  # None = 新建官方 forest
+    ) -> ForestPromotion:
+        """saga：
+           step1: 若 target 为 None → 新建 t_forest(scope='official')
+           step2: fork ForestVersion 到 official forest
+           step3: ForestPromotion → APPROVED
+           step4: outbox(ForestPromotionApproved)
+        """
+    
+    async def review_reject(self, promotion_id: str, reviewer_id: int, summary: str) -> ForestPromotion: ...
+    async def withdraw(self, promotion_id: str, by: int) -> ForestPromotion: ...
+```
+
+#### 10.13.5 状态机（追加到 §7）
+
+```
+ForestPromotion:
+  OPEN → APPROVED   （管理员通过 → 触发官方 forest 创建/更新 saga）
+  OPEN → REJECTED   （管理员拒绝）
+  OPEN → WITHDRAWN  （提审人撤回）
+  
+  终态：APPROVED / REJECTED / WITHDRAWN
+```
+
+不变式：
+
+- 同一 ForestVersion 不能并发多次提审（DB UNIQUE(forest_version_id, status)）
+- APPROVED 必有 `official_forest_id`
+- 提审通过后，原 forest 仍属用户私有；只有 fork 出去的副本是官方的
+
+#### 10.13.6 权限矩阵
+
+| 操作 | private(own) | official(view) | official(edit) | promotion(submit) | promotion(review) |
+|------|--------------|----------------|----------------|---------------------|---------------------|
+| viewer | 自己的 ✅ | ✅ | ❌ | ❌ | ❌ |
+| editor | ✅ | ✅ | ❌ | ✅ | ❌ |
+| reviewer | ✅ | ✅ | ❌ | ✅ | ✅ |
+| admin | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+---
+
+### 10.14 编辑器后端契约（抽屉 / 悬浮 / Patch）
+
+#### 10.14.1 业务诉求
+
+> "图是可以编辑的。点 command / 级跳 / bundle / 边 → 弹抽屉显示属性。鼠标放上去 → 显示关键信息。"
+
+后端为编辑器提供四类接口：
+
+1. **快照获取**：一次拉取整个 ForestVersion 的完整 JSON（§10.9.4 的 snapshot_json）
+2. **抽屉详情**：按 instance_id 获取单个对象（含模板 schema 解析后的视图）
+3. **悬浮提示**：轻量摘要（命中即返回，不带 properties）
+4. **编辑 Patch**：增量提交修改
+
+#### 10.14.2 抽屉视图 API
+
+```
+GET /api/v1/forests/{forest_id}/versions/{version_id}/instances/{instance_id}
+  - instance_id 形如 ci_xxx / cs_xxx / bd_xxx / ei_xxx
+
+返回（CommandInstance 例）：
+{
+  "kind": "command_instance",
+  "instance_id": "ci_001",
+  "summary": {
+    "display_name": "比较指令",
+    "category": "比较类",
+    "validation_state": "valid"
+  },
+  "drawer": {
+    "tabs": [
+      {
+        "key": "properties",
+        "label": "属性",
+        "fields": [
+          {
+            "name": "MetaIndex",
+            "display_name": "Meta 索引",
+            "kind": "enum",
+            "enum_options": [
+              {"value": 0, "display_name": "选项 A"},
+              {"value": 1, "display_name": "选项 B"}
+            ],
+            "value": { "kind": "literal", "literal_value": 1 },
+            "visible": true,
+            "editable": true,
+            "validation_errors": []
+          },
+          {
+            "name": "Data1",
+            "display_name": "数据 1",
+            "kind": "value",
+            "type_name": "u32",
+            "value": { "kind": "variable_ref", "variable_name": "var1" },
+            "visible": true,
+            "allow_variable": true,
+            "available_variables": [
+              {"name": "var1", "type": "u32", "scope": "forest"}
+            ]
+          },
+          {
+            "name": "Mask1",
+            "visible": false,
+            "absent_reason": "compareType != 'D_CMD_1'"
+          }
+        ]
+      },
+      {
+        "key": "metadata",
+        "label": "元信息",
+        "fields": [
+          {"name": "command_template", "value": "cmd1 v3"},
+          {"name": "cascade", "value": "cs_001"},
+          {"name": "role", "value": "main"}
+        ]
+      }
+    ]
+  }
+}
+```
+
+#### 10.14.3 悬浮提示 API
+
+```
+GET /api/v1/forests/{forest_id}/versions/{version_id}/instances/{instance_id}/tooltip
+
+返回：
+{
+  "instance_id": "ci_001",
+  "title": "Cmd1 [Meta=1, Type=D_CMD_1]",   // display_hints.tooltip_template 渲染
+  "subtitle": "main_struct in Cascade #001",
+  "validation_summary": "valid",
+  "key_facts": [
+    {"label": "类型", "value": "比较指令 v3"},
+    {"label": "属性", "value": "4 项 / 1 已绑定变量"}
+  ]
+}
+```
+
+#### 10.14.4 编辑 Patch API（防止全量保存）
+
+```
+POST /api/v1/forests/{forest_id}/draft-patch
+Body:
+{
+  "base_version_id": "frv_xxx",
+  "patches": [
+    { "op": "update_property", "instance_id": "ci_001",
+      "property_name": "compareType",
+      "value": { "kind": "literal", "literal_value": "D_CMD_2" } },
+    { "op": "add_cascade", "cascade": { ... },
+      "main_command_instance": { ... } },
+    { "op": "add_edge", "edge": { ... } },
+    { "op": "remove_instance", "instance_id": "ci_005" },
+    { "op": "wrap_into_bundle", "cascade_ids": ["cs_002","cs_003"],
+      "bundle_name": "InitObject" }
+  ]
+}
+
+返回：
+{
+  "draft_version_id": "frv_yyy",
+  "validation_report": { ... },
+  "auto_fixed_patches": [...],
+  "rejected_patches": [...]
+}
+```
+
+> Patch 应用走"先在内存里 fork DRAFT 版本 → 应用 patch → 校验不变式 → 通过则写库"。同一 forest 的并发编辑通过 `base_version_id` 做乐观锁；冲突时 409 + 提供 server-side merge 选项。
+
+#### 10.14.5 校验返回结构
+
+```json
+{
+  "validation_report": {
+    "ok": false,
+    "errors": [
+      {
+        "kind": "missing_required_property",
+        "instance_id": "ci_001",
+        "property_name": "Data1",
+        "message": "Data1 必填（compareType=='D_CMD_1' 时）"
+      },
+      {
+        "kind": "edge_target_not_main",
+        "edge_id": "ei_003",
+        "message": "边 target 必须指向级跳的 main_struct"
+      },
+      {
+        "kind": "cycle_detected",
+        "cascade_ids": ["cs_001","cs_002","cs_003"],
+        "message": "DAG 中发现环"
+      }
+    ],
+    "warnings": [
+      {
+        "kind": "deprecated_template_used",
+        "instance_id": "ci_002",
+        "command_template_id": "ct_old",
+        "message": "使用了已废弃的 cmd1 v2，建议升级到 v3"
+      }
+    ]
+  }
+}
+```
+
+---
+
+### 10.15 D3A → C/C++ 代码生成映射
+
+> 本节替代原 §10.1 中"D3A → C++ 映射模板"留白；落地 §5.1.5 `codegen-target` 中 `CppCodegenTarget` 的 D3A 实现。
+
+#### 10.15.1 映射规则总图
+
+| D3A 业务概念 | C/C++ 产物 | 生成位置 |
+|------------|----------|---------|
+| MetaTemplate.EnumType | `enum class Enum1 { ... };` | 全局头 `d3a_enums.hpp` |
+| MetaTemplate.ValueType | `using u32 = uint32_t;` | 全局头 `d3a_types.hpp` |
+| MetaTemplate.CompositeType (struct) | `struct Foo { ... };` | 全局头 |
+| MetaTemplate.VariableSlot | 模板参数 / 函数参数 | 见 §10.15.4 |
+| CommandTemplate | `struct/class` 定义 + 工厂函数 | `commands/${name}.hpp` |
+| CommandInstance | `struct` 实例（`constexpr` 静态数据） | Bundle 类内 |
+| Cascade | 一个命令实例**序列** | Bundle 类内连续字段 |
+| Bundle | `class` | `bundles/${ClassName}.hpp/cpp` |
+| EdgeInstance | 控制流：`if/else` 或函数指针表 | Bundle 类的 `next()` 方法 |
+| Forest | `main()` 入口 + 各 Bundle 实例化 | `main.cpp` |
+
+#### 10.15.2 codegen_hints 字段（PropertyDef 内）
+
+```python
+@dataclass(frozen=True)
+class CodegenHints:
+    cpp_class_name_template: str | None  # "Cmd1_${MetaIndex}"
+    header_includes: tuple[str, ...]
+    render_strategy: Literal["template", "custom"]
+    custom_template_text: str | None
+    extensions: Mapping[str, Any]
+```
+
+#### 10.15.3 通用渲染器示例（render_strategy = "template"）
+
+```cpp
+// 由 cmd1 v3（CommandTemplate）+ 一个 CommandInstance 的填值生成：
+
+// 头文件 commands/cmd1.hpp
+#pragma once
+#include <cstdint>
+#include "d3a_types.hpp"
+#include "d3a_enums.hpp"
+
+namespace d3a::cmd {
+
+struct Cmd1 {
+    Enum1     meta_index;
+    compareType compare_type;
+    
+    // Data1 仅在 compareType == D_CMD_1 || D_CMD_2 存在
+    // type_resolution: meta_index == 1 ? u32 : u64
+    std::variant<std::monostate, uint32_t, uint64_t> data1;
+    
+    // Mask1 仅在 compareType == D_CMD_1 存在
+    std::optional<uint32_t> mask1;
+};
+
+constexpr Cmd1 make_cmd1_${instance_id}() {
+    Cmd1 c{};
+    c.meta_index = Enum1::OptionB;
+    c.compare_type = compareType::D_CMD_1;
+    c.data1 = uint32_t{${var1}};
+    c.mask1 = uint32_t{0xFF};
+    return c;
+}
+
+}  // namespace d3a::cmd
+```
+
+#### 10.15.4 变量绑定的处理
+
+```
+设计期变量（design phase）：
+  → 在 codegen 时已知绑定值 → 直接展开为 literal
+
+运行期变量（runtime phase）：
+  → 提升为 Bundle 类构造函数参数
+  → 例如：
+      class InitObject {
+       public:
+         InitObject(uint32_t var1) : var1_(var1) { ... }
+       private:
+         uint32_t var1_;
+      };
+```
+
+#### 10.15.5 Bundle 与 Cascade 的关系
+
+```cpp
+// 一个 Bundle 含 2 个 Cascade，每个 Cascade 1 main + 1 action：
+class InitObject {
+ public:
+    void run() {
+        // Cascade #1
+        cmd::Cmd1 cmd1_main = make_cmd1_ci001();
+        cmd::CmdAction1 cmd1_act = make_cmd_action1_ci002();
+        execute(cmd1_main, cmd1_act);
+        
+        // 边：cs_001 (action[0]) --[yes]--> cs_002 (main)
+        if (cmd1_act.result_yes()) {
+            cmd::Cmd2 cmd2_main = make_cmd2_ci003();
+            cmd::CmdAction2 cmd2_act = make_cmd_action2_ci004();
+            execute(cmd2_main, cmd2_act);
+        }
+    }
+};
+```
+
+#### 10.15.6 D3ACppCodegenTarget 模块
+
+```python
+class D3ACppCodegenTarget(CodegenTarget):
+    language = "cpp"
+    target_name = "d3a-cpp"
+    
+    def __init__(
+        self,
+        meta_template_resolver: MetaTemplateResolver,
+        template_engine: Jinja2Engine,
+    ): ...
+    
+    def render_meta_types(
+        self,
+        meta_template_version: MetaTemplateVersion,
+    ) -> dict[str, str]:
+        """生成 d3a_types.hpp / d3a_enums.hpp / d3a_composites.hpp"""
+    
+    def render_command(
+        self,
+        ct_version: CommandTemplateVersion,
+        instance: CommandInstance,
+    ) -> CodeUnit: ...
+    
+    def render_bundle(
+        self,
+        bundle: Bundle,
+        cascades: list[Cascade],
+        edges: list[EdgeInstance],
+    ) -> CodeUnit: ...
+    
+    def render_main(
+        self,
+        forest_version: ForestVersion,
+    ) -> CodeUnit: ...
+    
+    def cmake_template(self, skeleton: CodeSkeleton) -> str: ...
+```
+
+#### 10.15.7 反模式
+
+- ❌ 在 `code-generator` 模块中硬编码 D3A 映射逻辑（必须全部走 `D3ACppCodegenTarget`）
+- ❌ 在 codegen 阶段访问 MetaTemplate 当前版本（必须用 ForestVersion 锁定的版本）
+- ❌ 用字符串拼接生成 C++ 代码（必须走 Jinja2 模板）
+
+---
+
+### 10.16 API 路径增量（追加到 §6.1.1 路由表）
+
+```
+╔══════════════════════════════════════════════════════════════════════════════════╗
+║  MetaTemplate 路由（10 条）                                                      ║
+╠═══════════╦═══════════════════════════════════════╦════════════════════════════╣
+║ POST      ║ /api/v1/meta-templates                ║ 创建草稿                   ║
+║ GET       ║ /api/v1/meta-templates                ║ 列表                       ║
+║ GET       ║ /api/v1/meta-templates/{id}           ║ 详情                       ║
+║ PUT       ║ /api/v1/meta-templates/{id}           ║ 更新草稿                   ║
+║ POST      ║ /api/v1/meta-templates/{id}/publish   ║ 发布（DRAFT→ACTIVE）       ║
+║ POST      ║ /api/v1/meta-templates/{id}/deprecate ║ 废弃                       ║
+║ GET       ║ /api/v1/meta-templates/{id}/versions  ║ 版本历史                   ║
+║ POST      ║ /api/v1/meta-templates/import         ║ 批量导入                   ║
+║ GET       ║ /api/v1/meta-templates/export         ║ 导出 pack                  ║
+║ GET       ║ /api/v1/meta-templates/{id}/impact    ║ 升级影响分析               ║
+╠═══════════╬═══════════════════════════════════════╬════════════════════════════╣
+║  CommandTemplate 路由（替代原 Template 路由 12 条 → 14 条）                      ║
+╠═══════════╬═══════════════════════════════════════╬════════════════════════════╣
+║ POST      ║ /api/v1/command-templates             ║ 创建                       ║
+║ GET       ║ /api/v1/command-templates             ║ 列表 / 搜索                ║
+║ GET       ║ /api/v1/command-templates/{id}        ║ 详情                       ║
+║ PUT       ║ /api/v1/command-templates/{id}        ║ 更新草稿                   ║
+║ DELETE    ║ /api/v1/command-templates/{id}        ║ 软删除                     ║
+║ POST      ║ /api/v1/command-templates/{id}/publish    ║ 发布                   ║
+║ POST      ║ /api/v1/command-templates/{id}/deprecate  ║ 废弃                   ║
+║ POST      ║ /api/v1/command-templates/{id}/fork   ║ Fork 为私有                ║
+║ GET       ║ /api/v1/command-templates/{id}/versions   ║ 版本历史               ║
+║ GET       ║ /api/v1/command-templates/{id}/impact ║ 升级影响分析               ║
+║ POST      ║ /api/v1/command-templates/{id}/migrate-affected-forests ║ 一键级联 fork ║
+║ POST      ║ /api/v1/command-templates/import      ║ 批量导入                   ║
+║ GET       ║ /api/v1/command-templates/export      ║ 批量导出                   ║
+║ POST      ║ /api/v1/command-templates/{id}/simulate   ║ 试运行 simulator       ║
+╠═══════════╬═══════════════════════════════════════╬════════════════════════════╣
+║  EdgeTemplate 路由（9 条）                                                       ║
+╠═══════════╬═══════════════════════════════════════╬════════════════════════════╣
+║ POST      ║ /api/v1/edge-templates                ║ 创建                       ║
+║ GET       ║ /api/v1/edge-templates                ║ 列表                       ║
+║ GET       ║ /api/v1/edge-templates/{id}           ║ 详情                       ║
+║ PUT       ║ /api/v1/edge-templates/{id}           ║ 更新草稿                   ║
+║ POST      ║ /api/v1/edge-templates/{id}/publish   ║ 发布                       ║
+║ POST      ║ /api/v1/edge-templates/{id}/deprecate ║ 废弃                       ║
+║ GET       ║ /api/v1/edge-templates/{id}/versions  ║ 版本历史                   ║
+║ POST      ║ /api/v1/edge-templates/import         ║ 导入                       ║
+║ GET       ║ /api/v1/edge-templates/export         ║ 导出                       ║
+╠═══════════╬═══════════════════════════════════════╬════════════════════════════╣
+║  Forest 编辑路由（增量到原 Graph 路由）                                         ║
+╠═══════════╬═══════════════════════════════════════╬════════════════════════════╣
+║ POST      ║ /api/v1/forests/{id}/draft-patch      ║ 增量编辑 patch             ║
+║ POST      ║ /api/v1/forests/{id}/validate         ║ 不保存仅校验               ║
+║ GET       ║ /api/v1/forests/{id}/versions/{vid}/instances/{iid} ║ 抽屉详情     ║
+║ GET       ║ /api/v1/forests/{id}/versions/{vid}/instances/{iid}/tooltip ║ 悬浮提示 ║
+║ POST      ║ /api/v1/forests/{id}/versions/{vid}/promote ║ 提审为官方           ║
+║ POST      ║ /api/v1/forests/clone-official/{official_id}/{vid} ║ 克隆官方到私有 ║
+╠═══════════╬═══════════════════════════════════════╬════════════════════════════╣
+║  Forest 官方库（5 条）                                                          ║
+╠═══════════╬═══════════════════════════════════════╬════════════════════════════╣
+║ GET       ║ /api/v1/official-forests              ║ 列表 / 搜索                ║
+║ GET       ║ /api/v1/official-forests/categories   ║ 类目列表                   ║
+║ GET       ║ /api/v1/official-forests/{id}         ║ 详情                       ║
+║ GET       ║ /api/v1/forest-promotions             ║ 提审列表（管理员）         ║
+║ POST      ║ /api/v1/forest-promotions/{id}/review ║ 审批                       ║
+╠═══════════╬═══════════════════════════════════════╬════════════════════════════╣
+║  表达式工具（1 条）                                                             ║
+╠═══════════╬═══════════════════════════════════════╬════════════════════════════╣
+║ POST      ║ /api/v1/expr/eval                     ║ 表达式预校验               ║
+╚═══════════╩═══════════════════════════════════════╩════════════════════════════╝
+```
+
+---
+
+### 10.17 状态机增量（追加到 §7）
+
+#### 10.17.1 §7.7 NodeTemplate 状态机的扩展
+
+> 原 §7.7 状态机不变（DRAFT / ACTIVE / DEPRECATED）。MetaTemplate / CommandTemplate / EdgeTemplate 三者共用此状态机。
+
+#### 10.17.2 §7.16 ForestPromotion 状态机（新增）
+
+```
+状态：OPEN → APPROVED / REJECTED / WITHDRAWN
+
+转移规则：
+  OPEN → APPROVED   ：reviewer 决议；同事务创建/更新官方 forest
+  OPEN → REJECTED   ：reviewer 决议
+  OPEN → WITHDRAWN  ：proposer 主动撤回
+
+不变式：
+  1. 终态后不可逆
+  2. APPROVED 必有 official_forest_id
+  3. (forest_version_id, status='open') DB 唯一约束
+  4. 同 ForestVersion 已 APPROVED 一次后，再次提审需选择新 ForestVersion
+```
+
+#### 10.17.3 ImpactMigrationSaga（新增；归 §6.1.5 pipeline-orchestrator）
+
+```
+PipelineRequest.kind = "impact_migration"
+saga steps:
+  1. analyze_impact → 持久化 ImpactReport
+  2. for each affected_forest（按用户拆分）:
+       fork ForestVersion (state=DRAFT, fork_reason=impact_migration)
+       触发 ValidationRun（验证迁移后版本）
+  3. 通知所有者 review
+  4. finalize（所有 forest 处理完毕）
+```
+
+---
+
+### 10.18 性能预算
+
+| 场景 | 目标 |
+|------|------|
+| 单个 Forest 加载（snapshot_json） | < 200ms（200 cascade、500 instance、300 edge 规模） |
+| 抽屉详情 API | < 50ms |
+| 悬浮提示 API | < 20ms |
+| Patch 增量提交 + 校验 | < 500ms |
+| 一个 CommandTemplate 升级的影响分析（1000 forest 规模） | < 5s（异步） |
+| 表达式 DSL 求值 | < 1ms / 表达式 |
+
+---
+
+### 10.19 对原文档的修订点清单
+
+> 落地本章需在第 1–9 章的相关位置做如下修订；编号对应原章节：
+
+| 原文档章节 | 修订内容 |
+|-----------|---------|
+| §1.3 限界上下文图 | 新增 BC：MetaTemplate / Edge；将 Node BC 改为 Command BC |
+| §2.1 模块清单 | 新增 16 个模块（见 §10.5 + §10.21.2）；总数 63 → 79 |
+| §3.1.3 node-simulator | 接口保持兼容；实现按 §10.21 重写为 CommandSimulator 体系 |
+| §4.2.2 scenario-engine | 内部 forest 遍历由 §10.21.9 ForestRunner 取代；模块对外职责不变 |
+| §3.1.1 node-definition | 重命名为 command-template-engine；属性 schema 改为 §10.7 PropertyDef；新增 MetaTemplate 引用 |
+| §3.1.2 node-registry | 重命名为 command-template-registry；缓存键加 `meta_template_version_id` 维度 |
+| §3.1.4 node-library | 拆为 command-template-library（积木）+ forest-template-library（工作流） |
+| §3.2.1 forest-structure | 新增 Cascade 一等公民；EdgeInstance 拆出独立实体；不变式补 §10.9.3 的 10 条 |
+| §3.2.2 forest-snapshot | snapshot_json 严格按 §10.9.4 契约；增加平铺子表写入 |
+| §5.1.5 codegen-target | CppCodegenTarget 中的 D3A 部分由 §10.15 的 D3ACppCodegenTarget 替代 |
+| §6.1.5 pipeline-orchestrator | 新增 ImpactMigrationSaga（kind=impact_migration） |
+| §7.7 NodeTemplate 状态机 | 重命名为 CommandTemplate 状态机；MetaTemplate / EdgeTemplate 复用 |
+| §7.8 GraphVersion 状态机 | 字段 `forked_from_version_id` + `fork_reason` 加入；不影响转移规则 |
+| §11.1 D3A 留白表 | 全部填充：每行后追加 `承载落地：参见 §10.X.Y` |
+| §11.4 错误码 | 追加 META / CMDTPL / EDGETPL / IMPACT / PROMOTION / FOREST 增量共 ~30 个 |
+| §11.5 领域事件 | 追加 MetaTemplate / CommandTemplate / EdgeTemplate / Promotion / Impact 系列共 12 个 |
+
+---
+
+### 10.20 迁移路径建议（从 NodeTemplate 数据到本设计）
+
+> 若已存在生产数据：
+
+1. 创建 `t_meta_template` + 1 条 seed MetaTemplate（含已有所有 enum / type 的总集）
+2. 写迁移脚本：扫描 `t_node_template`，按 name 分组拆出 CommandTemplate
+3. `t_node_template_version.definition` 中的 `extensions` 字段映射到 `t_command_template_version.properties_schema`
+4. `t_node_instance` 数据拆为 `t_cascade` + `t_command_instance`（按业务规则确定 main/action 角色）
+5. `t_edge` 数据按是否引用 EdgeTemplate 决定保留还是创建默认 EdgeTemplate
+
+具体迁移脚本由 schema-migration 模块按 §8.0.9（schema 演进外部化）执行。
+
+---
+
+### 10.21 Tool 子系统重写（替代原 §3.1.3 node-simulator + §4.2.2 scenario-engine 的实现）
+
+> **重写动机**：旧设计中"Tool/Simulator"是按"单节点 = 单工具"组织的（NodeSimulator 接口 + ScenarioRunner 拓扑遍历），与 D3A 实际业务概念（Command 不能脱离 Cascade 单独执行、Cascade 才是连线最小单位、Bundle 是代码生成对象、Edge 决定下一跳）不匹配。本节按 Command / 级跳 / 边 / DAG / Bundle 的层级**重新拆模拟器**；接口与原文档 §3.1.3 / §4.2.2 / §6.2.2 兼容（保留 NodeSimulator 类名作 alias，但内部转调新接口）。
+
+#### 10.21.1 子系统总图
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  ScenarioRunner（场景执行入口；归属 Phase1 scenario-engine 模块）│
+│   输入：ForestVersion + Scenario                                 │
+│   输出：ScenarioResult（含 verdict + 节点输出 + 归因）           │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  ForestRunner（一个 Scenario 在一棵 Forest 上的完整跑批）        │
+│   for each DAG in forest.computed.dags:                         │
+│       DAGRunner.run(dag, scenario, ctx)                         │
+│   汇总 → ForestRunResult                                          │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  DAGRunner（按 cascades + edges 的拓扑游走）                     │
+│   1. 从 root_cascade 开始                                        │
+│   2. CascadeSimulator.run(cascade) → CascadeResult              │
+│   3. EdgeResolver.next(cascade, result, edges) → next_cascade   │
+│   4. 重复直到 next_cascade == None（达到出度 0）                │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  CascadeSimulator（执行一个级跳）                                │
+│   1. 跑 main_struct CommandSimulator → MainResult                │
+│   2. 按 role_index 顺序跑各 action_struct CommandSimulator      │
+│   3. 汇总 → CascadeResult（main_output + action_outputs）       │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  CommandSimulator（执行单个命令实例；纯函数）                     │
+│   工厂：根据 CommandTemplateVersion.simulator_spec 选实现：      │
+│     - PureCommandSimulator（确定性逻辑）                         │
+│     - LlmCommandSimulator（LLM 模拟，强制 forced schema）        │
+│     - HybridCommandSimulator（PurePython + LLM 兜底）            │
+│   输入：command_template_snapshot + property_values + ctx        │
+│   输出：CommandResult（output_json + outgoing_signals + tokens） │
+└─────────────────────────────────────────────────────────────────┘
+                           │
+                           │ 与 Phase2 codegen 共用
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  BundleSimulator（用于带 Bundle 的整体集成测试 + 代码生成预览）   │
+│   1. 在 Bundle 内部所有 cascades 上调用 DAGRunner               │
+│   2. 把 BundleResult 整合为单对象的入参/出参签名                 │
+│   3. 仅在 Phase2 codegen / Phase3 dry-run 使用                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### 10.21.2 模块清单（追加到 §10.5 表）
+
+| # | 模块 | 层级 | 限界上下文 | 替代原模块 |
+|---|------|------|-----------|-----------|
+| 12.11 | command-simulator | Domain | Command | 替代 §3.1.3 node-simulator 的具体实现 |
+| 12.12 | cascade-simulator | Domain | Graph | 新增 |
+| 12.13 | edge-resolver | Domain | Graph | 新增（取代旧 ScenarioRunner 中"边语义"逻辑） |
+| 12.14 | dag-runner | Domain | Graph | 新增（取代旧 ScenarioRunner 拓扑游走逻辑） |
+| 12.15 | bundle-simulator | Domain | Graph + Phase2 | 新增 |
+| 12.16 | forest-runner | Domain | Phase1 | 替代 §4.2.2 scenario-engine 中 ScenarioRunner 的实现 |
+
+> 模块总数：73 → **79**
+
+#### 10.21.3 上下文与值对象
+
+```python
+@dataclass(frozen=True)
+class SimContext:
+    """模拟器执行上下文（贯穿四层）"""
+    run_id: str
+    forest_version_id: str
+    scenario_id: str | None       # 场景执行时填；纯 codegen 预览时为 None
+    
+    # 资源限制（与 §8.0.3 deadline 透传链对齐）
+    deadline: datetime
+    cancel_token: CancelToken
+    tracer: TraceEmitter
+    
+    # 变量绑定快照（forest 级）
+    variable_bindings: Mapping[str, Any]
+    
+    # LLM 资源（仅供 LlmCommandSimulator 使用）
+    llm_agent: LLMAgent | None
+    
+    # Sandbox 资源（仅供 HybridCommandSimulator 在沙箱中跑参考实现时使用）
+    sandbox_runtime: SandboxRuntime | None
+
+@dataclass(frozen=True)
+class CommandResult:
+    instance_id: str
+    output_json: dict             # 命令产出（符合 CommandTemplate.output_schema）
+    outgoing_signals: Mapping[str, Any]  # 触发出边的信号（key 与 EdgeTemplate.semantic 对齐）
+    warnings: tuple[str, ...]
+    duration_ms: int
+    tokens_in: int = 0
+    tokens_out: int = 0
+    llm_calls: int = 0
+
+@dataclass(frozen=True)
+class CascadeResult:
+    cascade_id: str
+    main_result: CommandResult
+    action_results: tuple[CommandResult, ...]   # 按 role_index 顺序
+    # 级跳级别的"出口信号"——由 main + actions 的 outgoing_signals 聚合而成
+    cascade_signals: Mapping[str, Any]
+    duration_ms: int
+
+@dataclass(frozen=True)
+class DAGRunResult:
+    dag_index: int
+    visited_cascades: tuple[str, ...]
+    cascade_results: Mapping[str, CascadeResult]
+    edges_traversed: tuple[str, ...]
+    final_output: dict | None
+    duration_ms: int
+
+@dataclass(frozen=True)
+class ForestRunResult:
+    forest_version_id: str
+    scenario_id: str | None
+    dag_results: tuple[DAGRunResult, ...]
+    aggregated_output: dict
+    total_duration_ms: int
+    total_tokens_in: int
+    total_tokens_out: int
+
+@dataclass(frozen=True)
+class BundleRunResult:
+    bundle_id: str
+    cascade_results: Mapping[str, CascadeResult]
+    object_signature: dict        # 等价于"Bundle 对应对象的入参 + 出参形态"
+```
+
+#### 10.21.4 模块详细设计：`command-simulator`
+
+> **限界上下文**：Command   **部署位置**：Worker（shared lib）
+> **依赖**：command-template-engine, command-property-evaluator, llm-agent-loop
+> **被依赖**：cascade-simulator
+
+```python
+class CommandSimulator(ABC):
+    @abstractmethod
+    async def run(
+        self,
+        ct_version: CommandTemplateVersion,
+        property_values: Mapping[str, PropertyValue],
+        ctx: SimContext,
+    ) -> CommandResult: ...
+
+    @abstractmethod
+    def kind(self) -> Literal["pure", "llm", "hybrid"]: ...
+
+class PureCommandSimulator(CommandSimulator):
+    """对确定性命令（如比较类、跳转类）：用 ExprEvaluator 直接求值产出 output_json。"""
+    
+class LlmCommandSimulator(CommandSimulator):
+    """对模糊语义命令：调 LLM 强制 forced_output_schema 产出 output_json。
+    LLM 输出严格遵循 ct_version.output_schema；不允许自由文本（同 §6.2.3 约定）。"""
+    
+class HybridCommandSimulator(CommandSimulator):
+    """先 PurePython 试跑；失败则降级 LLM；用于过渡期的复杂指令。"""
+
+class CommandSimulatorFactory:
+    def __init__(self, registry: dict[str, type[CommandSimulator]]): ...
+    def register(self, kind: str, cls: type[CommandSimulator]) -> None: ...
+    def create(self, ct_version: CommandTemplateVersion, ctx: SimContext) -> CommandSimulator:
+        """根据 ct_version.codegen_hints.simulator_kind 选实现"""
+```
+
+**关键约束**：
+
+- **无状态**：每次 `run()` 不带状态，所有外部依赖通过 `SimContext` 注入
+- **变量解析**：遇到 `PropertyValue.kind = "variable_ref"` 时，从 `ctx.variable_bindings` 取值；未绑定 → 报错（设计期变量必须设计期解析）
+- **option/type_option 在模拟前求值**：在调用 simulator 前，由 `command-property-evaluator` 把 schema 折叠为"实际生效的属性子集 + 终态类型"；模拟器只看子集
+- **forced output schema**：LlmCommandSimulator 必须把 `ct_version` 中由 PropertyDef 推导的 output 联合体作为 schema 传给 LLM
+- **取消**：每次 LLM 调用前后 + 每次重大 IO 前 检查 `ctx.cancel_token`
+
+**反模式**：
+
+- ❌ 在 simulator 实例上保存状态（不能跨调用）
+- ❌ 跳过 `command-property-evaluator` 直接读 raw `property_values`
+- ❌ LLM 自然语言判断"通过/失败"（必须 forced schema）
+
+**关键测试**：
+
+- `test_pure_simulator_deterministic`
+- `test_llm_simulator_forced_schema_violation_retry`
+- `test_variable_ref_unbound_raises`
+- `test_option_absent_property_not_passed_to_simulator`
+
+#### 10.21.5 模块详细设计：`cascade-simulator`
+
+> **限界上下文**：Graph   **部署位置**：Worker
+> **依赖**：command-simulator
+> **被依赖**：dag-runner, bundle-simulator
+
+```python
+class CascadeSimulator:
+    def __init__(self, command_factory: CommandSimulatorFactory): ...
+    
+    async def run(
+        self,
+        cascade: Cascade,
+        forest_version: ForestVersion,
+        ctx: SimContext,
+    ) -> CascadeResult:
+        """
+        1. 取 cascade.main_command_instance_id 对应 CommandInstance（含 ct_version_snapshot）
+        2. CommandSimulator.run(main_ci) → MainResult
+        3. 按 cascade.action_command_instance_ids 顺序逐个跑 action
+           - 每个 action 可读取前面 main + actions 的 output（通过 ctx.shared_state）
+        4. 聚合 cascade_signals：
+             默认策略：cascade_signals = main.outgoing_signals ∪ ⋃action.outgoing_signals
+             冲突策略：action 信号优先（action 是分支判断的最后一站）
+        5. 返回 CascadeResult
+        """
+```
+
+**不变式**：
+
+- main 必须先于 action 执行（保证拓扑顺序）
+- 单 cascade 内部不并行（actions 间存在隐式数据传递）
+
+**关键测试**：
+
+- `test_main_runs_before_actions`
+- `test_action_can_read_main_output`
+- `test_action_signal_overrides_main`
+
+#### 10.21.6 模块详细设计：`edge-resolver`
+
+> **限界上下文**：Graph   **部署位置**：shared lib
+> **依赖**：edge-template
+> **被依赖**：dag-runner
+
+```python
+class EdgeResolver:
+    """在 cascade_result 之上，根据 outgoing edges 决定下一跳。"""
+    
+    def __init__(self, edge_template_resolver: EdgeTemplateResolver): ...
+    
+    def next(
+        self,
+        current_cascade: Cascade,
+        cascade_result: CascadeResult,
+        outgoing_edges: list[EdgeInstance],
+    ) -> str | None:
+        """
+        返回下一个 cascade_id；None 表示没有出边（DAG 终点）。
+        
+        决策规则（每条出边独立判断 → 全部满足 → 选 priority 最低者）：
+          1. 先按 source_endpoint 过滤：取出 source 命中本次 cascade_result 的边
+             - source.role=main → 永远命中
+             - source.role=action,role_index=k → 仅当 cascade_result.action_results[k] 命中
+          2. 对每条候选边，按 EdgeTemplate.semantic_constraints 求值：
+             - 例：yes_branch 命中条件 = action_result.outgoing_signals["result_yes"] == True
+          3. 多条命中 → 报错（设计期约束应防止此情况；运行时给 TOOL_003）
+          4. 零条命中 → 返回 None（DAG 走到尽头）
+        """
+```
+
+**反模式**：
+
+- ❌ 把 edge 决策逻辑写到业务 code 里（必须全部走 EdgeTemplate.semantic_constraints + 本模块）
+- ❌ 用 LLM 决定"走哪条边"（违反 §6.2.3 forced schema 原则；边语义必须是结构化判断）
+
+**关键测试**：
+
+- `test_yes_branch_picks_correct_target`
+- `test_action_endpoint_only_fires_when_action_signal_set`
+- `test_ambiguous_edges_raise_tool_003`
+
+#### 10.21.7 模块详细设计：`dag-runner`
+
+> **限界上下文**：Graph   **部署位置**：Worker
+> **依赖**：cascade-simulator, edge-resolver, dag-compute
+> **被依赖**：forest-runner, bundle-simulator
+
+```python
+class DAGRunner:
+    def __init__(
+        self,
+        cascade_sim: CascadeSimulator,
+        edge_resolver: EdgeResolver,
+    ): ...
+    
+    async def run(
+        self,
+        dag: DagView,                  # 来自 §3.2.3 dag-compute
+        forest_version: ForestVersion,
+        ctx: SimContext,
+    ) -> DAGRunResult:
+        """
+        1. 从 dag.root_cascade 开始
+        2. 队列：deque([root_cascade])
+        3. 当队列非空且 deadline 未到：
+             current = pop_left
+             if current visited → 跳过（防御）
+             cascade_result = await CascadeSimulator.run(current)
+             outgoing = [e for e in dag.edges if e.source_cascade_id == current.id]
+             next_cascade = EdgeResolver.next(current, cascade_result, outgoing)
+             if next_cascade: queue.append(next_cascade)
+        4. 返回 DAGRunResult
+        
+        执行模型：
+          DAG 在级跳层面是有向无环的，但运行时游走是"按边激活"的线性序列：
+          每次只跟一条边走，因此天然不会回环。
+          若分支并存（如 yes/no 都命中）→ EdgeResolver 报错。
+        """
+```
+
+**不变式**：
+
+- DAG 设计期必须无环（已由 §10.9.3 不变式 6 保证）
+- 单 DAG 内 cascade 不重复访问（`visited` 集合保护，触发 TOOL_004）
+
+**崩溃恢复**：
+
+- 与 Run 级别一致：通过 RunStep 记录 last_completed_cascade_id；重启从其后继续
+
+**关键测试**：
+
+- `test_linear_chain_complete`
+- `test_branch_yes_no_only_one_taken`
+- `test_dag_terminates_on_zero_outgoing`
+- `test_runtime_cycle_detected_raises_tool_004`
+
+#### 10.21.8 模块详细设计：`bundle-simulator`
+
+> **限界上下文**：Graph + Phase2   **部署位置**：Worker
+> **依赖**：dag-runner
+> **被依赖**：phase2 codegen（生成对象签名预览）, phase3 case-synthesizer
+
+```python
+class BundleSimulator:
+    """
+    Bundle 的语义：在 forest 中是一组 cascades；在生成代码后是 1 个对象。
+    本模拟器用于：
+      - Phase2 在 codegen 前预演 Bundle 行为，确认对象的入参 / 出参签名
+      - Phase3 在生成沙箱用例前，给出"Bundle 期望行为"作为 oracle
+    """
+    
+    def __init__(self, dag_runner: DAGRunner): ...
+    
+    async def run(
+        self,
+        bundle: Bundle,
+        forest_version: ForestVersion,
+        ctx: SimContext,
+    ) -> BundleRunResult:
+        """
+        1. 取 bundle.cascade_ids 涉及的 sub-DAG（dag-compute 提供）
+        2. 对该 sub-DAG 调 DAGRunner.run
+        3. 推断对象签名：
+             入参：bundle 内入度为 0 的 cascade 中 main 命令的 input_schema 联合
+             出参：bundle 内出度为 0 的 cascade 中 main 命令的 output_schema 联合
+        4. 返回 BundleRunResult
+        """
+```
+
+**反模式**：
+
+- ❌ 不通过 dag-compute 自己拼 sub-DAG（容易漏边）
+- ❌ Bundle 跨 forest 共享（Bundle 强绑定 forest_version）
+
+**关键测试**：
+
+- `test_bundle_signature_extraction`
+- `test_bundle_with_internal_branches`
+
+#### 10.21.9 模块详细设计：`forest-runner`
+
+> **限界上下文**：Phase1   **部署位置**：Worker
+> **依赖**：dag-runner, scenario-comparator, failure-attribution
+> **被依赖**：scenario-engine（替代原 §4.2.2 ScenarioRunner 中 forest 遍历部分）
+
+```python
+class ForestRunner:
+    def __init__(
+        self,
+        dag_runner: DAGRunner,
+        comparator: ScenarioComparator,
+        attributor: FailureAttributor,
+    ): ...
+    
+    async def run_scenario(
+        self,
+        forest_version: ForestVersion,
+        scenario: Scenario,
+        ctx: SimContext,
+    ) -> ScenarioResult:
+        """
+        1. ctx.variable_bindings = scenario.variable_overrides ∪ forest_version.variable_bindings
+        2. for each dag in forest_version.computed.dags:
+             dag_result = await DAGRunner.run(dag, forest_version, ctx)
+        3. 聚合各 DAG 的 final_output → forest 整体 actual_output
+        4. 与 scenario.expected_output 对比（ScenarioComparator）
+        5. mismatch 则归因（FailureAttributor）
+        6. 返回 ScenarioResult
+        """
+```
+
+**与 §4.2.2 scenario-engine 的关系**：
+
+- `scenario-engine` 模块继续作为 Phase1 的 Handler 入口（保留原职责：管理多 scenario 并行调度）
+- `forest-runner` 是其内部新拆出来的"单 scenario × 单 forest"子单元
+- 旧 `ScenarioRunner.run_one()` 内部改为：`return await ForestRunner.run_scenario(...)`（保留签名兼容）
+
+#### 10.21.10 与原文档承载体的对接矩阵
+
+| 原文档承载 | 本节落地 | 对接关系 |
+|------------|---------|---------|
+| §3.1.3 NodeSimulator ABC | §10.21.4 CommandSimulator ABC | 接口签名一一对应；`NodeSimulator = alias of CommandSimulator` |
+| §3.1.3 NodeSimulatorFactory | §10.21.4 CommandSimulatorFactory | 同 |
+| §3.1.3 SimContext | §10.21.3 SimContext | 字段扩展（加 variable_bindings、sandbox_runtime） |
+| §4.2.2 ScenarioRunner | §10.21.9 ForestRunner（被 ScenarioRunner 调用） | 重构而非替代 |
+| §4.2.2 SimContext.upstream_outputs / tables | 由 CascadeResult.cascade_signals 取代 | 新机制更贴 D3A 业务（信号 vs 数据流） |
+| §6.2.5 LLMAgent | 仍由 LlmCommandSimulator 调用 | 不变 |
+| §7.12 Scenario Execution 状态机 | 不变（仍是 PENDING/AGENT_RUNNING/COMPARING/ATTRIBUTING/DONE） | ForestRunner 是 AGENT_RUNNING 的实现细节 |
+
+#### 10.21.11 状态机：Cascade Execution（新增 §7.17）
+
+```
+状态：PENDING → MAIN_RUNNING → ACTIONS_RUNNING → DONE / ERROR
+
+转移规则：
+  PENDING → MAIN_RUNNING       ：CascadeSimulator.run 开始
+  MAIN_RUNNING → ACTIONS_RUNNING：main CommandSimulator 完成（无论成功）
+  ACTIONS_RUNNING → DONE       ：所有 action 顺序完成
+  any → ERROR                  ：未捕获异常 / deadline 超时 / cancel
+```
+
+不变式：
+
+- main 完成前不进入 ACTIONS_RUNNING
+- ERROR 时已完成的 main / action 结果保留在 CascadeResult 中（用于事后归因）
+
+#### 10.21.12 性能预算
+
+| 场景 | 目标 |
+|------|------|
+| PureCommandSimulator 单次 run | < 5ms |
+| LlmCommandSimulator 单次 run（含 LLM） | < 3s（P99） |
+| CascadeSimulator 单次 run（10 命令） | < 30s（含 LLM） |
+| EdgeResolver.next | < 1ms |
+| DAGRunner（50 cascade DAG） | < 5min（含 LLM） |
+| ForestRunner（一个 scenario，100 cascade） | < 10min |
+
+---
+
+### 11.1 D3A 业务模型落地（原"留白项"现已全部落地）
+
+> 原"留白项"在第 10 章已全部落地。下表保留作为追溯索引：
+
+| 原留白项           | 状态         | 落地位置                                   | 落地形式                                           |
+| ------------------ | ------------ | ------------------------------------------ | -------------------------------------------------- |
+| D3A 节点 Schema    | ✅ 已落地    | §10.6 MetaTemplate + §10.7 CommandTemplate | MetaTemplate 类型字典 + CommandTemplate properties_schema（含 option / type_option / 变量占位） |
+| D3A 输入格式       | ✅ 已落地    | §10.9 Forest 平铺数据结构 + §10.15.4 变量绑定 | snapshot_json 完整契约 + VariableSlot 设计期/运行期分离 |
+| D3A 输出格式       | ✅ 已落地    | §10.15 D3A → C/C++ 代码生成映射            | 通用渲染器 + Bundle/Cascade/Edge 控制流映射         |
+| D3A → C++ 映射模板 | ✅ 已落地    | §10.15 D3ACppCodegenTarget                 | render_meta_types / render_command / render_bundle / render_main |
+| D3A 节点模拟器     | ✅ 已落地    | §10.21 Tool 子系统重写                     | CommandSimulator / CascadeSimulator / DAGRunner / BundleSimulator 四级模拟器 |
+| D3A 内置模板包     | ✅ 已落地    | §10.13 forest-template-library + §10.7 import_pack | 官方模板库分类 + JSON pack 导入接口                 |
+| 指令变更影响森林   | ✅ 已落地    | §10.12 模板版本变更与影响传播              | template-impact-analyzer + ImpactMigrationSaga + t_template_usage_index |
+| 用户私有/官方分库  | ✅ 已落地    | §10.13 官方模板库与社区贡献                | t_forest.scope + t_forest_promotion + 提审 saga    |
+| 编辑器交互后端     | ✅ 已落地    | §10.14 编辑器后端契约                      | 抽屉视图 / 悬浮提示 / Patch API                    |
+
+### 11.2 后续补全 D3A 的操作路径
 
 ```
 1. 确定 D3A 指令规范（JSON Schema + 语义）
@@ -6627,7 +9022,7 @@ else:
    → 加 D3A 输入 / 输出格式支持；不动 sandbox-executor
 ```
 
-### 10.3 术语表（完整版）
+### 11.3 术语表（完整版）
 
 | 术语            | 类型   | 定义                                                         |
 | --------------- | ------ | ------------------------------------------------------------ |
@@ -6648,7 +9043,7 @@ else:
 | Schema Version  | 演进   | 用于追踪状态对象的格式版本                                   |
 | D3A             | 业务   | 指令集规范（待定）                                           |
 
-### 10.4 错误码总表（80 个）
+### 11.4 错误码总表（含 D3A 业务模型增量）
 
 > **拆分说明**：原 RUN 系列拆为 VAL（ValidationRun）+ CDG（CodegenRun）两族；新增 CHANGESET、SUBMISSION 两族；REVIEW 系列改为绑 Submission。
 
@@ -6802,9 +9197,90 @@ else:
 | `DB_002` | 数据库事务冲突（乐观锁） | 409 | 重试 3 次 |
 | `DB_003` | MongoDB 写入失败 | 500 | 降级到 MySQL outbox |
 
+#### META 系列（元模板，新增）
+
+| 错误码 | 含义 | HTTP | 处理方式 |
+|--------|------|------|---------|
+| `META_001` | MetaTemplate 不存在 | 404 | - |
+| `META_002` | MetaTemplate 状态不允许此操作（如 ACTIVE 修改） | 409 | 提示新建版本 |
+| `META_003` | EnumType 名重复 | 409 | - |
+| `META_004` | EnumMember.value 重复 | 409 | - |
+| `META_005` | ValueType cpp_mapping 不合法 | 422 | - |
+| `META_006` | CompositeType 引用的子类型不存在 | 422 | - |
+| `META_007` | 当前版本仍被 N 个 ACTIVE 的 CommandTemplate 引用，不可 deprecate | 409 | 提示先升级引用方 |
+
+#### CMDTPL 系列（指令模板，替代原 TEMPLATE 系列；旧错误码保留兼容）
+
+| 错误码 | 含义 | HTTP | 处理方式 |
+|--------|------|------|---------|
+| `CMDTPL_001` | CommandTemplate 不存在 | 404 | - |
+| `CMDTPL_002` | 状态不允许此操作 | 409 | - |
+| `CMDTPL_003` | 引用的 MetaTemplateVersion 不存在或已 archived | 422 | - |
+| `CMDTPL_004` | properties_schema 中 type_ref 引用类型在 MetaTemplate 中找不到 | 422 | - |
+| `CMDTPL_005` | option / type_option 表达式语法错误 | 422 | 返回 AST 节点错误位置 |
+| `CMDTPL_006` | option 表达式引用了 display_order 不严格小于自身的属性 | 422 | - |
+| `CMDTPL_007` | enum 字面量不是已声明的 EnumMember | 422 | - |
+| `CMDTPL_008` | 当前版本仍被 N 个 ForestVersion 引用，不可强制 deprecate | 409 | 提示走 ImpactMigrationSaga |
+| `CMDTPL_009` | name 已存在（同 scope+owner） | 409 | - |
+
+#### EDGETPL 系列（边模板，新增）
+
+| 错误码 | 含义 | HTTP | 处理方式 |
+|--------|------|------|---------|
+| `EDGETPL_001` | EdgeTemplate 不存在 | 404 | - |
+| `EDGETPL_002` | 状态不允许此操作 | 409 | - |
+| `EDGETPL_003` | semantic_constraints.target_must_be_main 必须为 true（D3A 业务约束） | 422 | - |
+| `EDGETPL_004` | 引用 MetaTemplate 中类型不存在 | 422 | - |
+| `EDGETPL_005` | name 已存在 | 409 | - |
+
+#### FOREST 系列（增量到原 GRAPH，新增 12 项）
+
+| 错误码 | 含义 | HTTP | 处理方式 |
+|--------|------|------|---------|
+| `FOREST_010` | Cascade 没有 main_struct CommandInstance | 422 | - |
+| `FOREST_011` | Cascade 有多个 main_struct CommandInstance | 422 | DB 触发器拒绝 |
+| `FOREST_012` | Edge target 不是 main_struct | 422 | DB 触发器拒绝 |
+| `FOREST_013` | Edge source 是 action 但 EdgeTemplate.allow_action_source = false | 422 | - |
+| `FOREST_014` | DAG 检测到环 | 422 | dag-compute 校验 |
+| `FOREST_015` | Bundle 包含的 cascade_id 与其他 Bundle 重叠 | 422 | DB UNIQUE 拒绝 |
+| `FOREST_016` | 引用的 CommandTemplateVersion 已 archived | 422 | - |
+| `FOREST_017` | PropertyValue 的 variable_ref 指向未声明的变量 | 422 | - |
+| `FOREST_018` | PropertyValue absent 但 presence_condition 为 true | 422 | - |
+| `FOREST_019` | PropertyValue 存在但 presence_condition 为 false | 422 | - |
+| `FOREST_020` | type_resolution 无 case 命中且无 fallback | 422 | - |
+| `FOREST_021` | Patch 操作的 base_version_id 已被超越（乐观锁冲突） | 409 | 提示重 fetch + merge |
+
+#### IMPACT 系列（影响分析与级联，新增）
+
+| 错误码 | 含义 | HTTP | 处理方式 |
+|--------|------|------|---------|
+| `IMPACT_001` | 影响分析报告还在生成中 | 202 | 轮询 ImpactReport.status |
+| `IMPACT_002` | 升级 saga 检测到不兼容变更，需人工介入 | 200 | 含 partial_migration 报告 |
+| `IMPACT_003` | 影响 forest 数量过大（>1000），需分批迁移 | 422 | 分批触发 |
+
+#### PROMOTION 系列（提审，新增）
+
+| 错误码 | 含义 | HTTP | 处理方式 |
+|--------|------|------|---------|
+| `PROMOTION_001` | ForestPromotion 不存在 | 404 | - |
+| `PROMOTION_002` | 状态不允许此操作 | 409 | - |
+| `PROMOTION_003` | 同 ForestVersion 已有进行中的提审 | 409 | DB UNIQUE 拒绝 |
+| `PROMOTION_004` | 类目不存在 | 422 | - |
+| `PROMOTION_005` | 审批权限不足 | 403 | - |
+
+#### TOOL 系列（指令模拟器子系统，详见 §10.21）
+
+| 错误码 | 含义 | HTTP | 处理方式 |
+|--------|------|------|---------|
+| `TOOL_001` | CommandSimulator 工厂未注册指定 kind | 500 | 检查 simulator 注册 |
+| `TOOL_002` | CascadeSimulator 内部 main 执行失败 | 200 | scenario verdict 中体现 |
+| `TOOL_003` | EdgeResolver 无法决定下一跳（ambiguous） | 422 | 检查 edge property_values |
+| `TOOL_004` | DAGRunner 检测到运行时环 | 500 | 与设计期校验不一致，告警 |
+| `TOOL_005` | BundleSimulator 输入 ForestVersion 与 Bundle 不一致 | 422 | - |
+
 ---
 
-### 10.5 领域事件总表（80 个）
+### 11.5 领域事件总表（含 D3A 业务模型增量）
 
 > 总计 = ValidationRun 6 + CodegenRun 8 + Run-Common 5 + Phase1 8 + Phase2 6 + Phase3 10 + Step 4 + Template 5 + GraphVersion 5 + ChangeSet 4 + Submission 5 + Review 6 + Comment 3 + Sandbox/LLM 4 + Cost 1 = **80**
 >
@@ -6965,6 +9441,55 @@ else:
 |------|---------|--------|
 | `BudgetThresholdExceeded` | 预算达到 80% 阈值 | Metrics, Alert |
 
+#### MetaTemplate 事件（4 个，新增）
+
+| 事件 | 发布时机 | 消费者 |
+|------|---------|--------|
+| `MetaTemplateCreated` | MetaTemplate 创建（DRAFT） | AuditLog |
+| `MetaTemplateVersionPublished` | DRAFT → ACTIVE 时发出新版本 | TemplateImpactAnalyzer, command-template-registry 缓存失效 |
+| `MetaTemplateDeprecated` | ACTIVE → DEPRECATED | AuditLog |
+| `MetaTemplateImpactReportGenerated` | TemplateImpactAnalyzer 完成 | WebSocket 推送通知所有者 |
+
+#### CommandTemplate 事件（5 个，扩充原 NodeTemplate 5 项）
+
+> 命名兼容：原 `TemplateUpdated` / `TemplatePublished` / `TemplateForked` / `TemplateDeprecated` / `TemplateCreated` 仍生效；下面是 D3A 业务术语事件，payload 携带 `template_kind="command"`。
+
+| 事件 | 发布时机 | 消费者 |
+|------|---------|--------|
+| `CommandTemplateCreated` | 创建 DRAFT | AuditLog |
+| `CommandTemplateVersionPublished` | 发布新 ACTIVE 版本 | TemplateImpactAnalyzer, t_template_usage_index 重建任务 |
+| `CommandTemplateForked` | Fork 为私有 | AuditLog |
+| `CommandTemplateDeprecated` | 废弃 | AuditLog, 引用方告警 |
+| `CommandTemplateImpactReportGenerated` | 影响分析完成 | WebSocket（通知 forest 所有者） |
+
+#### EdgeTemplate 事件（3 个，新增）
+
+| 事件 | 发布时机 | 消费者 |
+|------|---------|--------|
+| `EdgeTemplateCreated` | 创建 | AuditLog |
+| `EdgeTemplateVersionPublished` | 发布 | edge-template 缓存失效 |
+| `EdgeTemplateDeprecated` | 废弃 | AuditLog |
+
+#### Forest 编辑与提审事件（5 个，新增）
+
+| 事件 | 发布时机 | 消费者 |
+|------|---------|--------|
+| `ForestDraftPatchApplied` | Patch API 应用成功 → 新 DRAFT 版本 | WebSocket |
+| `ForestPromotionSubmitted` | 用户提交提审 | AuditLog, WebSocket（通知管理员） |
+| `ForestPromotionApproved` | 管理员通过 → 创建/更新官方 forest | AuditLog, WebSocket |
+| `ForestPromotionRejected` | 管理员拒绝 | AuditLog, WebSocket |
+| `ForestPromotionWithdrawn` | 提审人撤回 | AuditLog |
+
+#### 影响传播 saga 事件（3 个，新增）
+
+| 事件 | 发布时机 | 消费者 |
+|------|---------|--------|
+| `ImpactMigrationSagaStarted` | ImpactMigrationSaga step1 开始 | WebSocket, AuditLog |
+| `ImpactMigrationForestForked` | 单个 forest 完成 fork | WebSocket（通知所有者） |
+| `ImpactMigrationSagaFinalized` | 所有 forest 处理完毕 | WebSocket, Metrics |
+
+> 上述 D3A 增量事件共 **20 个**，加上原 80 个，事件总表合计 **100 个**。
+
 ------
 
-*下次评审: D3A 规范确定后补全 §10.1 留白项*
+> 修订记录：D3A 业务模型已在第 10 章全部落地，原 §10.1 留白项不再为 TBD。后续如有 D3A 指令清单变化，按 §10.12 影响传播流程处理。
