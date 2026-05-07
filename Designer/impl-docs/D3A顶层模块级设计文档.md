@@ -135,7 +135,7 @@ Cross-Cutting 不作为中间"层"，是任意层都可引用的正交维度；D
 
 ```mermaid
 flowchart TB
-    subgraph Node["Node BC（节点定义）"]
+    subgraph TmplBase["模板通用承载体（被 MetaTemplate / Command / Edge 共用）"]
         TD[node-definition]
         TR[node-registry]
         TS[node-simulator]
@@ -143,12 +143,37 @@ flowchart TB
         SE[schema-engine]
     end
 
-    subgraph Graph["Graph BC（图结构）"]
+    subgraph Meta["MetaTemplate BC（类型字典）"]
+        MT[meta-template]
+    end
+
+    subgraph Cmd["Command BC（指令模板）"]
+        CTE[command-template-engine]
+        CTR[command-template-registry]
+        CTL[command-template-library]
+        CPE[command-property-evaluator]
+        CSIM[command-simulator]
+    end
+
+    subgraph Edge["Edge BC（边模板）"]
+        ET[edge-template]
+        ER[edge-resolver]
+    end
+
+    subgraph Graph["Graph BC（森林 / DAG / 模拟）"]
         FS[forest-structure]
         FN[forest-snapshot]
-        DC[dag-compute]
-        FV[forest-visitor]
+        FSB[forest-snapshot-builder]
+        FTL[forest-template-library]
         FD[forest-diff]
+        FV[forest-visitor]
+        DC[dag-compute]
+        CV[cascade-validator]
+        TIA[template-impact-analyzer]
+        CASIM[cascade-simulator]
+        DRN[dag-runner]
+        BSIM[bundle-simulator]
+        FRN[forest-runner]
     end
 
     subgraph Exec["Execution BC（执行编排）"]
@@ -198,13 +223,21 @@ flowchart TB
         PO[pipeline-orchestrator]
     end
 
-    Node --> Graph
+    TmplBase -.implements.-> Meta
+    TmplBase -.implements.-> Cmd
+    TmplBase -.implements.-> Edge
+    Meta --> Cmd
+    Meta --> Edge
+    Cmd --> Graph
+    Edge --> Graph
     Graph --> Exec
     Exec --> P1
     Exec --> P2
     Exec --> P3
-    Node -.读.-> P1
-    Node -.读.-> P2
+    Cmd -.读.-> P1
+    Cmd -.读.-> P2
+    Edge -.读.-> P1
+    Edge -.读.-> P2
 
     %% Submission 聚合 ValidationRun + CodegenRun，反向 FK
     Rev -.submission_id FK.-> Exec
@@ -499,103 +532,111 @@ sequenceDiagram
 
 ### 2.1 全模块目录
 
+> **L1 Domain 限界上下文**：D3A 业务模型把领域层切成 9 个限界上下文——**MetaTemplate / Command / Edge / Graph / Execution / Phase1 / Phase2 / Phase3 / Review**。其中 MetaTemplate / Command / Edge / Graph 是 D3A 业务的核心建模轴（聚合根映射详见 §10.2），共享一组**模板通用承载体**模块（node-definition / node-registry / node-simulator / node-library / schema-engine）作为代码骨架，由 3 个模板上下文各自实例化。
+
 | #                                                            | 模块                | 层级        | 限界上下文 | 主语言 | 部署单元    | 关键依赖（Port 接口 ★ 标注）            |
 | ------------------------------------------------------------ | ------------------- | ----------- | ---------- | ------ | ----------- | --------------------------------------- |
-| **L1 Domain — Node（5 个）**                                 |                     |             |            |        |             |                                         |
-| 1.1                                                          | node-definition     | Domain      | Node       | Python | API+Worker  | schema-engine                           |
-| 1.2                                                          | node-registry       | Domain      | Node       | Python | API+Worker  | ★NodeRegistryPort, ★CachePort           |
-| 1.3                                                          | node-simulator      | Domain      | Node       | Python | Worker      | llm-agent-loop                          |
-| 1.4                                                          | node-library        | Domain      | Node       | Python | API         | node-definition, auth-rbac              |
-| 1.5                                                          | schema-engine       | Domain      | Node       | Python | shared lib  | jsonschema                              |
-| **L1 Domain — Graph（5 个）**                                |                     |             |            |        |             |                                         |
-| 2.1                                                          | forest-structure    | Domain      | Graph      | Python | API+Worker  | node-registry                           |
-| 2.2                                                          | forest-snapshot     | Domain      | Graph      | Python | API+Worker  | ★GraphRepositoryPort                    |
-| 2.3                                                          | dag-compute         | Domain      | Graph      | Python | shared lib  | networkx                                |
-| 2.4                                                          | forest-visitor      | Domain      | Graph      | Python | shared lib  | -                                       |
-| 2.5                                                          | forest-diff         | Domain      | Graph      | Python | API         | dag-compute                             |
+| **L1 Domain — 模板通用承载体（5 个；MetaTemplate / Command / Edge 共享）** |       |             |            |        |             |                                         |
+| 1.1                                                          | node-definition     | Domain      | 通用承载体 | Python | API+Worker  | schema-engine                           |
+| 1.2                                                          | node-registry       | Domain      | 通用承载体 | Python | API+Worker  | ★NodeRegistryPort, ★CachePort           |
+| 1.3                                                          | node-simulator      | Domain      | 通用承载体 | Python | Worker      | llm-agent-loop                          |
+| 1.4                                                          | node-library        | Domain      | 通用承载体 | Python | API         | node-definition, auth-rbac              |
+| 1.5                                                          | schema-engine       | Domain      | 通用承载体 | Python | shared lib  | jsonschema                              |
+| **L1 Domain — MetaTemplate（1 个；详见 §10.6）**             |                     |             |            |        |             |                                         |
+| 2.1                                                          | meta-template       | Domain      | MetaTemplate | Python | API+Worker | ★MetaTemplateRepositoryPort             |
+| **L1 Domain — Command（5 个；详见 §10.7 / §10.10 / §10.19）** |                     |             |            |        |             |                                         |
+| 3.1                                                          | command-template-engine | Domain  | Command    | Python | API+Worker  | ★CommandTemplateRepositoryPort, meta-template |
+| 3.2                                                          | command-template-registry | Domain | Command  | Python | API+Worker  | ★CommandTemplateRepositoryPort, ★CachePort |
+| 3.3                                                          | command-template-library | Domain | Command   | Python | API         | command-template-engine, auth-rbac      |
+| 3.4                                                          | command-property-evaluator | Domain | Command | Python | shared lib  | -                                       |
+| 3.5                                                          | command-simulator   | Domain      | Command    | Python | Worker      | command-property-evaluator, llm-agent-loop |
+| **L1 Domain — Edge（2 个；详见 §10.8 / §10.19）**            |                     |             |            |        |             |                                         |
+| 4.1                                                          | edge-template       | Domain      | Edge       | Python | API+Worker  | ★EdgeTemplateRepositoryPort             |
+| 4.2                                                          | edge-resolver       | Domain      | Edge       | Python | shared lib  | edge-template                           |
+| **L1 Domain — Graph（13 个；详见 §10.9 / §10.11–§10.13 / §10.19）** |              |             |            |        |             |                                         |
+| 5.1                                                          | forest-structure    | Domain      | Graph      | Python | API+Worker  | command-template-registry, edge-template |
+| 5.2                                                          | forest-snapshot     | Domain      | Graph      | Python | API+Worker  | ★GraphRepositoryPort                    |
+| 5.3                                                          | forest-snapshot-builder | Domain  | Graph      | Python | API+Worker  | forest-snapshot, command-template-engine |
+| 5.4                                                          | forest-template-library | Domain  | Graph      | Python | API         | forest-snapshot, auth-rbac              |
+| 5.5                                                          | forest-diff         | Domain      | Graph      | Python | API         | dag-compute                             |
+| 5.6                                                          | forest-visitor      | Domain      | Graph      | Python | shared lib  | -                                       |
+| 5.7                                                          | dag-compute         | Domain      | Graph      | Python | shared lib  | networkx                                |
+| 5.8                                                          | cascade-validator   | Domain      | Graph      | Python | shared lib  | dag-compute                             |
+| 5.9                                                          | template-impact-analyzer | Domain | Graph      | Python | API+Worker  | ★TemplateUsageIndexPort                 |
+| 5.10                                                         | cascade-simulator   | Domain      | Graph      | Python | Worker      | command-simulator                       |
+| 5.11                                                         | dag-runner          | Domain      | Graph      | Python | Worker      | cascade-simulator, edge-resolver        |
+| 5.12                                                         | bundle-simulator    | Domain      | Graph      | Python | Worker      | dag-runner                              |
+| 5.13                                                         | forest-runner       | Domain      | Graph      | Python | Worker      | dag-runner, scenario-comparator         |
 | **L1 Domain — Execution（6 个）**                            |                     |             |            |        |             |                                         |
-| 3.1                                                          | validation-run      | Domain      | Execution  | Python | API+Worker  | ★ValidationRunRepositoryPort            |
-| 3.2                                                          | codegen-run         | Domain      | Execution  | Python | API+Worker  | ★CodegenRunRepositoryPort               |
-| 3.3                                                          | phase-state-machine | Domain      | Execution  | Python | shared lib  | trace-bus                               |
-| 3.4                                                          | cascade-state       | Domain      | Execution  | Python | shared lib  | -                                       |
-| 3.5                                                          | run-step            | Domain      | Execution  | Python | Worker      | ★RunStepRepositoryPort, ★TraceStorePort |
-| 3.6                                                          | cancellation        | Domain      | Execution  | Python | API+Worker  | ★CancellationPort                       |
+| 6.1                                                          | validation-run      | Domain      | Execution  | Python | API+Worker  | ★ValidationRunRepositoryPort            |
+| 6.2                                                          | codegen-run         | Domain      | Execution  | Python | API+Worker  | ★CodegenRunRepositoryPort               |
+| 6.3                                                          | phase-state-machine | Domain      | Execution  | Python | shared lib  | trace-bus                               |
+| 6.4                                                          | cascade-state       | Domain      | Execution  | Python | shared lib  | -                                       |
+| 6.5                                                          | run-step            | Domain      | Execution  | Python | Worker      | ★RunStepRepositoryPort, ★TraceStorePort |
+| 6.6                                                          | cancellation        | Domain      | Execution  | Python | API+Worker  | ★CancellationPort                       |
 | **L1 Domain — Phase1（7 个）**                               |                     |             |            |        |             |                                         |
-| 4.1                                                          | structure-check     | Domain      | Phase1     | Python | Worker      | forest-visitor                          |
-| 4.2                                                          | scenario-engine     | Domain      | Phase1     | Python | Worker      | node-simulator, llm-agent-loop          |
-| 4.3                                                          | scenario-comparator | Domain      | Phase1     | Python | shared lib  | -                                       |
-| 4.4                                                          | failure-attribution | Domain      | Phase1     | Python | Worker      | -                                       |
-| 4.5                                                          | handler-chain       | Domain      | Phase1     | Python | shared lib  | trace-bus                               |
-| 4.6                                                          | phase1-reflector    | Domain      | Phase1     | Python | Worker      | llm-agent-loop, scenario-engine         |
-| 4.7                                                          | changeset           | Domain      | Phase1     | Python | API+Worker  | ★ChangeSetRepositoryPort                |
+| 7.1                                                          | structure-check     | Domain      | Phase1     | Python | Worker      | forest-visitor                          |
+| 7.2                                                          | scenario-engine     | Domain      | Phase1     | Python | Worker      | forest-runner, llm-agent-loop           |
+| 7.3                                                          | scenario-comparator | Domain      | Phase1     | Python | shared lib  | -                                       |
+| 7.4                                                          | failure-attribution | Domain      | Phase1     | Python | Worker      | -                                       |
+| 7.5                                                          | handler-chain       | Domain      | Phase1     | Python | shared lib  | trace-bus                               |
+| 7.6                                                          | phase1-reflector    | Domain      | Phase1     | Python | Worker      | llm-agent-loop, scenario-engine         |
+| 7.7                                                          | changeset           | Domain      | Phase1     | Python | API+Worker  | ★ChangeSetRepositoryPort                |
 | **L1 Domain — Phase2（5 个）**                               |                     |             |            |        |             |                                         |
-| 5.1                                                          | code-planner        | Domain      | Phase2     | Python | Worker      | dag-compute, llm-agent-loop             |
-| 5.2                                                          | code-generator      | Domain      | Phase2     | Python | Worker      | codegen-target, llm-agent-loop          |
-| 5.3                                                          | code-assembler      | Domain      | Phase2     | Python | Worker      | codegen-target                          |
-| 5.4                                                          | code-snapshot       | Domain      | Phase2     | Python | Worker      | ★CodeSnapshotRepositoryPort             |
-| 5.5                                                          | codegen-target      | Domain      | Phase2     | Python | shared lib  | -                                       |
+| 8.1                                                          | code-planner        | Domain      | Phase2     | Python | Worker      | dag-compute, llm-agent-loop             |
+| 8.2                                                          | code-generator      | Domain      | Phase2     | Python | Worker      | codegen-target, llm-agent-loop          |
+| 8.3                                                          | code-assembler      | Domain      | Phase2     | Python | Worker      | codegen-target                          |
+| 8.4                                                          | code-snapshot       | Domain      | Phase2     | Python | Worker      | ★CodeSnapshotRepositoryPort             |
+| 8.5                                                          | codegen-target      | Domain      | Phase2     | Python | shared lib  | -                                       |
 | **L1 Domain — Phase3（7 个）**                               |                     |             |            |        |             |                                         |
-| 6.1                                                          | static-reflector    | Domain      | Phase3     | Python | Worker      | llm-agent-loop                          |
-| 6.2                                                          | sandbox-provisioner | Domain      | Phase3     | Python | Worker      | sandbox-runtime                         |
-| 6.3                                                          | sandbox-compiler    | Domain      | Phase3     | Python | Worker      | sandbox-runtime                         |
-| 6.4                                                          | sandbox-executor    | Domain      | Phase3     | Python | Worker      | sandbox-runtime                         |
-| 6.5                                                          | case-synthesizer    | Domain      | Phase3     | Python | Worker      | llm-agent-loop                          |
-| 6.6                                                          | dynamic-reflector   | Domain      | Phase3     | Python | Worker      | llm-agent-loop                          |
-| 6.7                                                          | fix-loop-controller | Domain      | Phase3     | Python | Worker      | phase-state-machine                     |
+| 9.1                                                          | static-reflector    | Domain      | Phase3     | Python | Worker      | llm-agent-loop                          |
+| 9.2                                                          | sandbox-provisioner | Domain      | Phase3     | Python | Worker      | sandbox-runtime                         |
+| 9.3                                                          | sandbox-compiler    | Domain      | Phase3     | Python | Worker      | sandbox-runtime                         |
+| 9.4                                                          | sandbox-executor    | Domain      | Phase3     | Python | Worker      | sandbox-runtime                         |
+| 9.5                                                          | case-synthesizer    | Domain      | Phase3     | Python | Worker      | llm-agent-loop                          |
+| 9.6                                                          | dynamic-reflector   | Domain      | Phase3     | Python | Worker      | llm-agent-loop                          |
+| 9.7                                                          | fix-loop-controller | Domain      | Phase3     | Python | Worker      | phase-state-machine                     |
 | **L1 Domain — Review（3 个）**                               |                     |             |            |        |             |                                         |
-| 7.1                                                          | submission          | Domain      | Review     | Python | API+Worker  | ★SubmissionRepositoryPort               |
-| 7.2                                                          | review-workflow     | Domain      | Review     | Python | API         | ★ReviewRepositoryPort                   |
-| 7.3                                                          | review-comment      | Domain      | Review     | Python | API         | ★CommentRepositoryPort                  |
-| **L2 Application（7 个）**                                   |                     |             |            |        |             |                                         |
-| 8.1                                                          | api-gateway         | App         | -          | Python | API Node    | All Domain                              |
-| 8.2                                                          | websocket-pusher    | App         | -          | Python | API Node    | redis-pubsub                            |
-| 8.3                                                          | worker-runtime      | App         | -          | Python | Worker Node | All Phase                               |
-| 8.4                                                          | pipeline-builder    | App         | Execution  | Python | Worker      | LangGraph                               |
-| 8.5                                                          | pipeline-orchestrator | App       | Execution  | Python | API+Worker  | ★PipelineRequestRepositoryPort, trace-bus |
-| 8.6                                                          | idempotency         | App         | -          | Python | API+Worker  | redis-pubsub, mysql-store               |
-| 8.7                                                          | pipeline-variant    | App         | Execution  | Python | shared lib  | feature-flag                            |
-| **L3 Integration（6 个）**                                   |                     |             |            |        |             |                                         |
-| 9.1                                                          | llm-provider        | Integration | -          | Python | shared lib  | secret-vault                            |
-| 9.2                                                          | llm-tool-use        | Integration | -          | Python | shared lib  | -                                       |
-| 9.3                                                          | llm-output-schema   | Integration | -          | Python | shared lib  | schema-engine                           |
-| 9.4                                                          | llm-prompt-cache    | Integration | -          | Python | shared lib  | redis-pubsub                            |
-| 9.5                                                          | llm-agent-loop      | Integration | -          | Python | shared lib  | llm-*                                   |
-| 9.6                                                          | sandbox-runtime     | Integration | -          | Python | shared lib  | docker-driver                           |
+| 10.1                                                         | submission          | Domain      | Review     | Python | API+Worker  | ★SubmissionRepositoryPort               |
+| 10.2                                                         | review-workflow     | Domain      | Review     | Python | API         | ★ReviewRepositoryPort                   |
+| 10.3                                                         | review-comment      | Domain      | Review     | Python | API         | ★CommentRepositoryPort                  |
+| **L2 Application（8 个）**                                   |                     |             |            |        |             |                                         |
+| 11.1                                                         | api-gateway         | App         | -          | Python | API Node    | All Domain                              |
+| 11.2                                                         | websocket-pusher    | App         | -          | Python | API Node    | redis-pubsub                            |
+| 11.3                                                         | worker-runtime      | App         | -          | Python | Worker Node | All Phase                               |
+| 11.4                                                         | pipeline-builder    | App         | Execution  | Python | Worker      | LangGraph                               |
+| 11.5                                                         | pipeline-orchestrator | App       | Execution  | Python | API+Worker  | ★PipelineRequestRepositoryPort, trace-bus |
+| 11.6                                                         | idempotency         | App         | -          | Python | API+Worker  | redis-pubsub, mysql-store               |
+| 11.7                                                         | pipeline-variant    | App         | Execution  | Python | shared lib  | feature-flag                            |
+| 11.8                                                         | forest-promotion-workflow | App   | Review     | Python | API         | ★ForestPromotionRepositoryPort          |
+| **L3 Integration（7 个）**                                   |                     |             |            |        |             |                                         |
+| 12.1                                                         | llm-provider        | Integration | -          | Python | shared lib  | secret-vault                            |
+| 12.2                                                         | llm-tool-use        | Integration | -          | Python | shared lib  | -                                       |
+| 12.3                                                         | llm-output-schema   | Integration | -          | Python | shared lib  | schema-engine                           |
+| 12.4                                                         | llm-prompt-cache    | Integration | -          | Python | shared lib  | redis-pubsub                            |
+| 12.5                                                         | llm-agent-loop      | Integration | -          | Python | shared lib  | llm-*                                   |
+| 12.6                                                         | sandbox-runtime     | Integration | -          | Python | shared lib  | docker-driver                           |
+| 12.7                                                         | d3a-codegen-target  | Integration | Phase2     | Python | shared lib  | meta-template, codegen-target           |
 | **L4 Cross-Cutting（侧切面，7 个）**                         |                     |             |            |        |             |                                         |
-| 10.1                                                         | trace-bus           | Cross       | -          | Python | shared lib  | mongo-trace, redis-pubsub               |
-| 10.2                                                         | metrics             | Cross       | -          | Python | shared lib  | Prometheus client                       |
-| 10.3                                                         | audit-log           | Cross       | -          | Python | shared lib  | mysql-store                             |
-| 10.4                                                         | auth-rbac           | Cross       | -          | Python | shared lib  | mysql-store                             |
-| 10.5                                                         | feature-flag        | Cross       | -          | Python | shared lib  | redis-pubsub                            |
-| 10.6                                                         | secret-vault        | Cross       | -          | Python | shared lib  | env / KMS                               |
-| 10.7                                                         | llm-cost-governor   | Cross       | -          | Python | shared lib  | redis-pubsub, metrics                   |
+| 13.1                                                         | trace-bus           | Cross       | -          | Python | shared lib  | mongo-trace, redis-pubsub               |
+| 13.2                                                         | metrics             | Cross       | -          | Python | shared lib  | Prometheus client                       |
+| 13.3                                                         | audit-log           | Cross       | -          | Python | shared lib  | mysql-store                             |
+| 13.4                                                         | auth-rbac           | Cross       | -          | Python | shared lib  | mysql-store                             |
+| 13.5                                                         | feature-flag        | Cross       | -          | Python | shared lib  | redis-pubsub                            |
+| 13.6                                                         | secret-vault        | Cross       | -          | Python | shared lib  | env / KMS                               |
+| 13.7                                                         | llm-cost-governor   | Cross       | -          | Python | shared lib  | redis-pubsub, metrics                   |
 | **L5 Infrastructure（5 个）**                                |                     |             |            |        |             |                                         |
-| 11.1                                                         | mysql-store         | Infra       | -          | Python | shared lib  | SQLAlchemy                              |
-| 11.2                                                         | mongo-trace         | Infra       | -          | Python | shared lib  | motor                                   |
-| 11.3                                                         | redis-pubsub        | Infra       | -          | Python | shared lib  | redis-py                                |
-| 11.4                                                         | docker-driver       | Infra       | -          | Python | shared lib  | docker SDK                              |
-| 11.5                                                         | schema-migration    | Infra       | -          | Python | CLI + Cron  | alembic                                 |
-| **L1 Domain — D3A 业务（16 个；详见 §10）**                  |                     |             |            |        |             |                                         |
-| 12.1                                                         | meta-template       | Domain      | MetaTemplate | Python | API+Worker | ★MetaTemplateRepositoryPort              |
-| 12.2                                                         | command-template-engine | Domain  | Command    | Python | API+Worker  | ★CommandTemplateRepositoryPort, meta-template |
-| 12.3                                                         | command-property-evaluator | Domain | Command | Python | shared lib | -                                       |
-| 12.4                                                         | edge-template       | Domain      | Edge       | Python | API+Worker  | ★EdgeTemplateRepositoryPort              |
-| 12.5                                                         | cascade-validator   | Domain      | Graph      | Python | shared lib  | dag-compute                             |
-| 12.6                                                         | forest-snapshot-builder | Domain  | Graph      | Python | API+Worker  | forest-snapshot, command-template-engine |
-| 12.7                                                         | template-impact-analyzer | Domain | Graph + Command | Python | API+Worker | ★TemplateUsageIndexPort                |
-| 12.8                                                         | forest-template-library | Domain  | Graph      | Python | API         | forest-snapshot, auth-rbac              |
-| 12.9                                                         | forest-promotion-workflow | App   | Review     | Python | API         | ★ForestPromotionRepositoryPort           |
-| 12.10                                                        | d3a-codegen-target  | Integration | Phase2     | Python | shared lib  | meta-template, codegen-target           |
-| 12.11                                                        | command-simulator   | Domain      | Command    | Python | Worker      | command-property-evaluator, llm-agent-loop |
-| 12.12                                                        | cascade-simulator   | Domain      | Graph      | Python | Worker      | command-simulator                       |
-| 12.13                                                        | edge-resolver       | Domain      | Graph      | Python | shared lib  | edge-template                           |
-| 12.14                                                        | dag-runner          | Domain      | Graph      | Python | Worker      | cascade-simulator, edge-resolver        |
-| 12.15                                                        | bundle-simulator    | Domain      | Graph + Phase2 | Python | Worker | dag-runner                              |
-| 12.16                                                        | forest-runner       | Domain      | Phase1     | Python | Worker      | dag-runner, scenario-comparator         |
+| 14.1                                                         | mysql-store         | Infra       | -          | Python | shared lib  | SQLAlchemy                              |
+| 14.2                                                         | mongo-trace         | Infra       | -          | Python | shared lib  | motor                                   |
+| 14.3                                                         | redis-pubsub        | Infra       | -          | Python | shared lib  | redis-py                                |
+| 14.4                                                         | docker-driver       | Infra       | -          | Python | shared lib  | docker SDK                              |
+| 14.5                                                         | schema-migration    | Infra       | -          | Python | CLI + Cron  | alembic                                 |
 
-> **统计**：领域层 54 + 应用层 8 + 集成层 7 + 横切面 7 + 基础设施 5 = **79 个模块**（Cross-Cutting 7 个为正交维度，非分层）
+> **统计**：领域层 54 + 应用层 8 + 集成层 7 + 横切面 7 + 基础设施 5 = **81 个模块**（Cross-Cutting 7 个为正交维度，非分层）
 >
-> **Domain 54** = Node 5 + Graph 5 + Execution 6 + Phase1 7 + Phase2 5 + Phase3 7 + Review 3 + D3A 业务 16
+> **Domain 54** = 模板通用承载体 5 + MetaTemplate 1 + Command 5 + Edge 2 + Graph 13 + Execution 6 + Phase1 7 + Phase2 5 + Phase3 7 + Review 3
+>
+> **聚合根 → 限界上下文 → 模块**对应关系详见 §10.2；模板通用承载体（1.1–1.5）在 MetaTemplate / Command / Edge 三个上下文各自实例化（详见 §3.1 引言）。
 >
 > **Port 接口说明**：标注 ★ 的依赖表示领域层定义了抽象 Port 接口（ABC），由基础设施层或集成层提供具体实现，通过 DI 注入。领域代码中 **import 的是 Port ABC，不是 mysql-store/redis-pubsub 等具体模块**。
 
@@ -687,15 +728,20 @@ sequenceDiagram
 
 ------
 
-## 第 3 章 Node / Graph 域模块详细设计
+## 第 3 章 模板通用承载体 / Graph 域模块详细设计
 
-> 本章定义 Node 域（节点模板与模拟器接口的承载体）与 Graph 域（森林结构、版本快照、DAG 计算）的通用承载体。D3A 业务把 Node 域具体化为 MetaTemplate / CommandTemplate / EdgeTemplate（§10.6–§10.8），把 Graph 域具体化为 Cascade / Bundle / Forest 平铺数据结构与编辑契约（§10.9 / §10.14）。
+> 本章给出两类**跨业务**的承载体模块：
+>
+> 1. **§3.1 模板通用承载体（5 个）**：`node-definition` / `node-registry` / `node-simulator` / `node-library` / `schema-engine`。这 5 个是 D3A 三个模板上下文（**MetaTemplate / Command / Edge**）共享的代码骨架——聚合根定义、版本化、注册查询、模拟器抽象、模板库 CRUD、JSON Schema 校验。每个上下文按本章接口实例化自己的具体类型（MetaTemplate 见 §10.6；CommandTemplate 见 §10.7；EdgeTemplate 见 §10.8）。
+> 2. **§3.2 Graph 域（5 个）**：`forest-structure` / `forest-snapshot` / `dag-compute` / `forest-visitor` / `forest-diff`。Forest 平铺数据结构（Cascade / Bundle / CommandInstance / EdgeInstance）与编辑契约见 §10.9 / §10.14；模拟与运行时（cascade-simulator / dag-runner / bundle-simulator / forest-runner）见 §10.19。
 
-### 3.1 Node 域模块（5 个）
+### 3.1 模板通用承载体（5 个）
 
-#### 3.1.1 `node-definition`（节点定义）
+> **使用约定**：本节模块定义"通用承载体"接口与默认实现（如 `NodeTemplate` 聚合根、`NodeTemplateRegistry` 缓存协议、`NodeSimulator` ABC、`TemplateLibraryService` 权限矩阵）。MetaTemplate / Command / Edge 三个 D3A 上下文各自给定具体类型（如 `CommandTemplate` / `CommandTemplateRegistry` / `CommandSimulator`）实现这些接口；接口本身不绑定到任何一个上下文。表中"限界上下文"列标注为"通用承载体"以示其跨上下文性质。
 
-- **限界上下文**：Node
+#### 3.1.1 `node-definition`（模板定义承载体）
+
+- **限界上下文**：通用承载体（MetaTemplate / Command / Edge 共用）
 - **部署位置**：API + Worker（shared lib）
 - **依赖**：schema-engine
 - **被依赖**：node-registry, node-library, forest-structure, code-generator
@@ -768,9 +814,9 @@ class DefinitionFactory:
 
 ------
 
-#### 3.1.2 `node-registry`（节点注册表）
+#### 3.1.2 `node-registry`（模板注册表承载体）
 
-- **限界上下文**：Node
+- **限界上下文**：通用承载体（MetaTemplate / Command / Edge 共用）
 - **部署位置**：API + Worker
 - **依赖**：mysql-store, redis-pubsub, node-definition
 - **被依赖**：forest-structure（构建图时解析模板）, scenario-engine（执行时拿到 simulator）
@@ -847,9 +893,9 @@ class NodeTemplateRegistry:
 
 ------
 
-#### 3.1.3 `node-simulator`（模拟器）
+#### 3.1.3 `node-simulator`（模拟器承载体）
 
-- **限界上下文**：Node
+- **限界上下文**：通用承载体（在 D3A 中由 Command 上下文 §10.19.3 `command-simulator` 落地）
 - **部署位置**：Worker
 - **依赖**：llm-agent-loop, schema-engine
 - **被依赖**：scenario-engine
@@ -926,9 +972,9 @@ class NodeSimulatorFactory:
 
 ------
 
-#### 3.1.4 `node-library`（节点库）
+#### 3.1.4 `node-library`（模板库承载体）
 
-- **限界上下文**：Node
+- **限界上下文**：通用承载体（在 D3A 中由 Command 上下文 §10.7 `command-template-library` 与 Edge 上下文 §10.8 共同落地）
 - **部署位置**：API
 - **依赖**：node-definition, node-registry, auth-rbac
 - **被依赖**：api-gateway（模板管理 API）
@@ -973,7 +1019,7 @@ class TemplateLibraryService:
 
 #### 3.1.5 `schema-engine`（JSON Schema 引擎）
 
-- **限界上下文**：Node（共享 lib）
+- **限界上下文**：通用承载体（共享 lib；MetaTemplate / Command / Edge 与 llm-output-schema 复用）
 - **部署位置**：shared lib
 - **依赖**：jsonschema 第三方库
 - **被依赖**：node-definition, llm-output-schema, forest-visitor
@@ -6789,20 +6835,38 @@ else:
 
 ### 10.5 D3A 业务域模块清单
 
-> 归属与 §2.1 表对齐；模拟器子系统的 6 个模块单独列于 §10.19.2。
+> 归属与 §2.1 表对齐。本表列出 D3A 4 个业务限界上下文（MetaTemplate / Command / Edge / Graph）+ Review / Phase2 中与 D3A 直接相关的模块；模板通用承载体（node-* / schema-engine）不重复列出，详见 §3.1。
 
 | # | 模块 | 层级 | 限界上下文 | 详细设计 |
 |---|------|------|-----------|---------|
-| 12.1 | meta-template | Domain | MetaTemplate | §10.6 |
-| 12.2 | command-template-engine | Domain | Command | §10.7 |
-| 12.3 | command-property-evaluator | Domain | Command | §10.10 |
-| 12.4 | edge-template | Domain | Edge | §10.8 |
-| 12.5 | cascade-validator | Domain | Graph | §10.9 |
-| 12.6 | forest-snapshot-builder | Domain | Graph | §10.9 + §10.11 |
-| 12.7 | template-impact-analyzer | Domain | Graph + Command | §10.12 |
-| 12.8 | forest-template-library | Domain | Graph | §10.13 |
-| 12.9 | forest-promotion-workflow | App | Review | §10.13 |
-| 12.10 | d3a-codegen-target | Integration | Phase2 | §10.15 |
+| **MetaTemplate（1）** | | | | |
+| 2.1 | meta-template | Domain | MetaTemplate | §10.6 |
+| **Command（5）** | | | | |
+| 3.1 | command-template-engine | Domain | Command | §10.7 |
+| 3.2 | command-template-registry | Domain | Command | §10.7（聚合查询路径，复用 §3.1.2 承载体） |
+| 3.3 | command-template-library | Domain | Command | §10.7 + §10.13（复用 §3.1.4 承载体） |
+| 3.4 | command-property-evaluator | Domain | Command | §10.10 |
+| 3.5 | command-simulator | Domain | Command | §10.19.3 |
+| **Edge（2）** | | | | |
+| 4.1 | edge-template | Domain | Edge | §10.8 |
+| 4.2 | edge-resolver | Domain | Edge | §10.19.6 |
+| **Graph（13）** | | | | |
+| 5.1 | forest-structure | Domain | Graph | §3.2.1（承载体） |
+| 5.2 | forest-snapshot | Domain | Graph | §3.2.2（承载体） |
+| 5.3 | forest-snapshot-builder | Domain | Graph | §10.9 + §10.11 |
+| 5.4 | forest-template-library | Domain | Graph | §10.13 |
+| 5.5 | forest-diff | Domain | Graph | §3.2.5（承载体） |
+| 5.6 | forest-visitor | Domain | Graph | §3.2.4（承载体） |
+| 5.7 | dag-compute | Domain | Graph | §3.2.3（承载体） |
+| 5.8 | cascade-validator | Domain | Graph | §10.9 |
+| 5.9 | template-impact-analyzer | Domain | Graph | §10.12 |
+| 5.10 | cascade-simulator | Domain | Graph | §10.19.4 |
+| 5.11 | dag-runner | Domain | Graph | §10.19.7 |
+| 5.12 | bundle-simulator | Domain | Graph | §10.19.8 |
+| 5.13 | forest-runner | Domain | Graph | §10.19.9 |
+| **Review / Phase2 跨界** | | | | |
+| 11.8 | forest-promotion-workflow | App | Review | §10.13 |
+| 12.7 | d3a-codegen-target | Integration | Phase2 | §10.15 |
 
 ---
 
@@ -8998,12 +9062,12 @@ saga steps:
 
 | # | 模块 | 层级 | 限界上下文 | 职责 |
 |---|------|------|-----------|------|
-| 12.11 | command-simulator | Domain | Command | 单条命令实例的执行（Pure / LLM / Hybrid 三态） |
-| 12.12 | cascade-simulator | Domain | Graph | 一个级跳的 main → actions 顺序执行与信号聚合 |
-| 12.13 | edge-resolver | Domain | Graph | 边语义判断决定下一跳 |
-| 12.14 | dag-runner | Domain | Graph | 按边激活的 DAG 游走 + 调用栈维护 |
-| 12.15 | bundle-simulator | Domain | Graph + Phase2 | Bundle 内部子 DAG 的整体执行与对象签名抽取 |
-| 12.16 | forest-runner | Domain | Phase1 | 一个 scenario × 一棵 forest 的完整执行入口 |
+| 3.5  | command-simulator | Domain | Command | 单条命令实例的执行（Pure / LLM / Hybrid 三态） |
+| 5.10 | cascade-simulator | Domain | Graph | 一个级跳的 main → actions 顺序执行与信号聚合 |
+| 4.2  | edge-resolver | Domain | Edge | 边语义判断决定下一跳 |
+| 5.11 | dag-runner | Domain | Graph | 按边激活的 DAG 游走 + 调用栈维护 |
+| 5.12 | bundle-simulator | Domain | Graph | Bundle 内部子 DAG 的整体执行与对象签名抽取 |
+| 5.13 | forest-runner | Domain | Graph | 一个 scenario × 一棵 forest 的完整执行入口 |
 
 #### 10.19.3 上下文与值对象
 
